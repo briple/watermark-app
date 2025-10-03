@@ -1,14 +1,15 @@
-from tkinter import Tk, Label
-from hello import display_hello
+from tkinterdnd2 import TkinterDnD
+from tkinter import Label
+from component.image_uploader import ImageUploader
 
 def main():
-    root = Tk()
+    root = TkinterDnD.Tk()
     root.title("Watermark App")
-    root.geometry("600x400")
+    # root.attributes('-fullscreen', True)
+    root.geometry("1200x800")
 
-    hello_label = Label(root, text=display_hello())
-    hello_label.pack(pady=20)
-
+    uploader = ImageUploader(root)
+    uploader.pack(fill='both', expand=True)
     root.mainloop()
 
 if __name__ == "__main__":
