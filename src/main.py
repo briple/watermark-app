@@ -4,7 +4,7 @@ from hello import display_hello
 def main():
     root = Tk()
     root.title("Watermark App")
-    root.geometry("300x200")
+    root.geometry("600x400")
 
     hello_label = Label(root, text=display_hello())
     hello_label.pack(pady=20)
