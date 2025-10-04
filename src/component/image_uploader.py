@@ -9,7 +9,7 @@ SUPPORTED_FORMATS = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif')
 class ImageUploader(Frame):
     def __init__(self, master):
         super().__init__(master)
-        self.images = []  # [(filepath, thumbnail, watermarked_thumb)]
+        self.images = []  # [(filepath, original_thumb_tk, watermarked_thumb_tk, original_image)]
         self.selected_index = None
         self.watermark_options = None
         self.current_watermark_pos = None
@@ -153,27 +153,28 @@ class ImageUploader(Frame):
     def add_files(self, files):
         for f in files:
             if f.lower().endswith(SUPPORTED_FORMATS) and f not in [img[0] for img in self.images]:
-                thumb, watermarked_thumb = self.make_thumbnails(f)
-                self.images.append((f, thumb, watermarked_thumb))
+                original_thumb_tk, watermarked_thumb_tk, original_img = self.make_thumbnails(f)
+                self.images.append((f, original_thumb_tk, watermarked_thumb_tk, original_img))
                 self.file_list.insert(END, os.path.basename(f))
 
     def make_thumbnails(self, filepath):
         """创建原始缩略图和水印缩略图"""
         try:
-            img = Image.open(filepath).convert("RGBA")
+            original_img = Image.open(filepath).convert("RGBA")
+            
             # 创建原始缩略图
-            original_thumb = img.copy()
-            original_thumb.thumbnail((400, 400))  # 增大预览尺寸
+            original_thumb = original_img.copy()
+            original_thumb.thumbnail((400, 400))
             original_thumb_tk = ImageTk.PhotoImage(original_thumb)
             
             # 创建水印缩略图（初始状态）
-            watermarked_thumb = self.apply_watermark_to_thumbnail(img.copy())
+            watermarked_thumb = self.apply_watermark_to_thumbnail(original_img.copy())
             watermarked_thumb_tk = ImageTk.PhotoImage(watermarked_thumb)
             
-            return original_thumb_tk, watermarked_thumb_tk
+            return original_thumb_tk, watermarked_thumb_tk, original_img
         except Exception as e:
             print(f"创建缩略图时出错: {e}")
-            return None, None
+            return None, None, None
 
     def apply_watermark_to_thumbnail(self, image):
         """应用水印到缩略图"""
@@ -181,7 +182,7 @@ class ImageUploader(Frame):
             # 使用水印选项应用水印
             if self.watermark_options:
                 watermarked = self.watermark_options.apply_watermark_preview(image)
-                watermarked.thumbnail((400, 400))  # 增大预览尺寸
+                watermarked.thumbnail((400, 400))
                 return watermarked
             image.thumbnail((400, 400))
             return image
@@ -191,15 +192,17 @@ class ImageUploader(Frame):
             return image
 
     def update_preview(self):
-        """更新所有图片的预览"""
-        for i, (filepath, original_thumb, _) in enumerate(self.images):
+        """更新所有图片的预览 - 修复版本"""
+        print("更新预览...")  # 调试信息
+        for i, (filepath, original_thumb_tk, _, original_img) in enumerate(self.images):
             try:
+                # 重新从文件加载图片，避免引用丢失
                 img = Image.open(filepath).convert("RGBA")
                 watermarked_thumb = self.apply_watermark_to_thumbnail(img.copy())
                 watermarked_thumb_tk = ImageTk.PhotoImage(watermarked_thumb)
                 
-                # 更新水印缩略图
-                self.images[i] = (filepath, original_thumb, watermarked_thumb_tk)
+                # 更新水印缩略图，保持原始缩略图和原图引用
+                self.images[i] = (filepath, original_thumb_tk, watermarked_thumb_tk, original_img)
                 
             except Exception as e:
                 print(f"更新预览时出错: {e}")
@@ -216,13 +219,15 @@ class ImageUploader(Frame):
             self.selected_index = idx
             
             # 获取水印缩略图
-            _, _, watermarked_thumb = self.images[idx]
+            filepath, _, watermarked_thumb_tk, _ = self.images[idx]
             
-            if watermarked_thumb:
+            if watermarked_thumb_tk:
                 self.canvas.delete("all")
                 
                 # 显示完整图片
-                self.create_preview_with_grid(watermarked_thumb)
+                self.create_preview_with_grid(watermarked_thumb_tk)
+
+    # 其余方法保持不变...
 
     def create_preview_with_grid(self, thumb_image):
         """创建带九宫格参考线的预览"""
