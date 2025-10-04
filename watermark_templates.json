@@ -1,0 +1,48 @@
+{
+  "lalal1": {
+    "watermark_type": "text",
+    "text_settings": {
+      "text": "Watermark",
+      "font_family": "Courier New",
+      "font_size": 36,
+      "bold": 0,
+      "italic": 0,
+      "color": "#afe3eb",
+      "opacity": 19,
+      "shadow": 0,
+      "stroke": 0,
+      "stroke_width": 2,
+      "position": "top"
+    },
+    "image_settings": {
+      "image_path": "",
+      "scale_percent": 30,
+      "opacity": 50,
+      "position": "center"
+    },
+    "timestamp": 1759583236.5597925
+  },
+  "lalal2": {
+    "watermark_type": "text",
+    "text_settings": {
+      "text": "Watermark",
+      "font_family": "Times New Roman",
+      "font_size": 36,
+      "bold": 1,
+      "italic": 1,
+      "color": "#FF0000",
+      "opacity": 39,
+      "shadow": 0,
+      "stroke": 0,
+      "stroke_width": 2,
+      "position": "center"
+    },
+    "image_settings": {
+      "image_path": "",
+      "scale_percent": 30,
+      "opacity": 50,
+      "position": "center"
+    },
+    "timestamp": 1759583258.955776
+  }
+}

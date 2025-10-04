@@ -1,6 +1,7 @@
 import os
 import platform
-from tkinter import Frame, Label, Entry, Button, Scale, StringVar, OptionMenu, Radiobutton, filedialog, END, IntVar, Toplevel
+import json
+from tkinter import Frame, Label, Entry, Button, Scale, StringVar, OptionMenu, Radiobutton, filedialog, END, IntVar, Toplevel, Listbox, messagebox
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 import tkinter as tk
 
@@ -349,6 +350,39 @@ class TextWatermarkOptions(Frame):
         b = int(hex_color[4:6], 16)
         return (r, g, b, alpha)
 
+    def get_settings(self):
+        """获取当前文本水印设置"""
+        return {
+            'text': self.text_entry.get(),
+            'font_family': self.font_family.get(),
+            'font_size': self.font_size.get(),
+            'bold': self.bold.get(),
+            'italic': self.italic.get(),
+            'color': self.color.get(),
+            'opacity': self.opacity.get(),
+            'shadow': self.shadow.get(),
+            'stroke': self.stroke.get(),
+            'stroke_width': self.stroke_width.get(),
+            'position': self.position.get()
+        }
+    
+    def set_settings(self, settings):
+        """应用文本水印设置"""
+        self.text_entry.delete(0, END)
+        self.text_entry.insert(0, settings.get('text', 'Watermark'))
+        
+        self.font_family.set(settings.get('font_family', 'Times New Roman'))
+        self.font_size.set(settings.get('font_size', 36))
+        self.bold.set(settings.get('bold', 0))
+        self.italic.set(settings.get('italic', 0))
+        self.color.set(settings.get('color', '#FF0000'))
+        self.color_preview.config(bg=self.color.get())
+        self.opacity.set(settings.get('opacity', 50))
+        self.shadow.set(settings.get('shadow', 0))
+        self.stroke.set(settings.get('stroke', 0))
+        self.stroke_width.set(settings.get('stroke_width', 2))
+        self.position.set(settings.get('position', 'center'))
+
 class ImageWatermarkOptions(Frame):
     def __init__(self, master, update_callback=None):
         super().__init__(master)
@@ -512,6 +546,78 @@ class ImageWatermarkOptions(Frame):
         else:
             return (margin, margin)  # 默认位置
 
+    def get_settings(self):
+        """获取当前图片水印设置"""
+        return {
+            'image_path': self.image_path.get(),
+            'scale_percent': self.scale_percent.get(),
+            'opacity': self.opacity.get(),
+            'position': self.position.get()
+        }
+    
+    def set_settings(self, settings):
+        """应用图片水印设置"""
+        self.image_path.set(settings.get('image_path', ''))
+        if self.image_path.get():
+            self.path_label.config(text=os.path.basename(self.image_path.get()))
+        else:
+            self.path_label.config(text="未选择")
+        
+        self.scale_percent.set(settings.get('scale_percent', 30))
+        self.opacity.set(settings.get('opacity', 50))
+        self.position.set(settings.get('position', 'center'))
+
+class TemplateManager:
+    def __init__(self, template_file="watermark_templates.json"):
+        self.template_file = template_file
+        self.templates = self.load_templates()
+    
+    def load_templates(self):
+        """加载模板文件"""
+        if os.path.exists(self.template_file):
+            try:
+                with open(self.template_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"加载模板文件失败: {e}")
+                return {}
+        return {}
+    
+    def save_templates(self):
+        """保存模板到文件"""
+        try:
+            with open(self.template_file, 'w', encoding='utf-8') as f:
+                json.dump(self.templates, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            print(f"保存模板文件失败: {e}")
+            return False
+    
+    def save_template(self, name, watermark_type, text_settings, image_settings):
+        """保存模板"""
+        self.templates[name] = {
+            'watermark_type': watermark_type,
+            'text_settings': text_settings,
+            'image_settings': image_settings,
+            'timestamp': os.path.getmtime(self.template_file) if os.path.exists(self.template_file) else 0
+        }
+        return self.save_templates()
+    
+    def load_template(self, name):
+        """加载模板"""
+        return self.templates.get(name)
+    
+    def delete_template(self, name):
+        """删除模板"""
+        if name in self.templates:
+            del self.templates[name]
+            return self.save_templates()
+        return False
+    
+    def get_template_names(self):
+        """获取所有模板名称"""
+        return list(self.templates.keys())
+
 class WatermarkOptions(Frame):
     def __init__(self, master, images_ref, output_format_ref, update_callback=None):
         super().__init__(master)
@@ -519,7 +625,10 @@ class WatermarkOptions(Frame):
         self.output_format_ref = output_format_ref
         self.update_callback = update_callback
         self.master_ref = master
-
+        
+        # 初始化模板管理器
+        self.template_manager = TemplateManager()
+        
         # 水印类型选择 - 紧凑布局
         type_frame = Frame(self)
         type_frame.grid(row=0, column=0, columnspan=3, sticky='w', padx=5, pady=5)
@@ -581,10 +690,27 @@ class WatermarkOptions(Frame):
         self.scale_percent.set(100)
         self.scale_percent.pack(side='left', padx=(0, 5))
         
+        # 第三行：导出按钮和模板管理
+        export_row3 = Frame(export_frame)
+        export_row3.pack(fill='x', pady=(5, 0))
+        
         # 导出按钮
-        self.export_btn = Button(export_frame, text="批量导出", command=self.add_watermark_and_export,
+        self.export_btn = Button(export_row3, text="批量导出", command=self.add_watermark_and_export,
                                 bg="#4CAF50", fg="black", font=("Arial", 10, "bold"), width=10, padx=10)
-        self.export_btn.pack(side='left', pady=(5, 0))
+        self.export_btn.pack(side='left', padx=(0, 10))
+        
+        # 模板管理按钮
+        self.template_btn = Button(export_row3, text="模板管理", command=self.manage_templates,
+                                  bg="#2196F3", fg="black", font=("Arial", 10), width=8)
+        self.template_btn.pack(side='left', padx=(0, 5))
+        
+        # 保存模板按钮
+        self.save_template_btn = Button(export_row3, text="保存模板", command=self.save_current_template,
+                                       bg="#FF9800", fg="black", font=("Arial", 10), width=8)
+        self.save_template_btn.pack(side='left', padx=(0, 5))
+        
+        # 加载默认模板
+        self.load_default_template()
 
     def update_preview_callback(self):
         """包装更新回调，确保不会丢失图片选择状态"""
@@ -776,3 +902,123 @@ class WatermarkOptions(Frame):
         
         Label(dialog, text=message, pady=20, justify='left').pack()
         Button(dialog, text="确定", command=dialog.destroy).pack()
+
+    # 模板管理相关方法
+    def save_current_template(self):
+        """保存当前设置为模板"""
+        template_name = tk.simpledialog.askstring("保存模板", "请输入模板名称:")
+        if not template_name:
+            return
+        
+        if template_name in self.template_manager.get_template_names():
+            if not messagebox.askyesno("确认", f"模板 '{template_name}' 已存在，是否覆盖？"):
+                return
+        
+        # 获取当前设置
+        watermark_type = self.watermark_type.get()
+        text_settings = self.text_options.get_settings()
+        image_settings = self.image_options.get_settings()
+        
+        # 保存模板
+        if self.template_manager.save_template(template_name, watermark_type, text_settings, image_settings):
+            messagebox.showinfo("成功", f"模板 '{template_name}' 保存成功！")
+        else:
+            messagebox.showerror("错误", "保存模板失败！")
+
+    def manage_templates(self):
+        """管理模板对话框"""
+        dialog = Toplevel(self)
+        dialog.title("水印模板管理")
+        dialog.geometry("500x400")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        # 模板列表
+        list_frame = Frame(dialog)
+        list_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        Label(list_frame, text="已保存的模板:", font=("Arial", 10, "bold")).pack(anchor='w')
+        
+        template_list = Listbox(list_frame, height=10)
+        template_list.pack(fill='both', expand=True, pady=5)
+        
+        # 刷新模板列表
+        def refresh_list():
+            template_list.delete(0, END)
+            for name in self.template_manager.get_template_names():
+                template_list.insert(END, name)
+        
+        refresh_list()
+        
+        # 按钮框架
+        btn_frame = Frame(dialog)
+        btn_frame.pack(fill='x', padx=10, pady=10)
+        
+        # 加载模板按钮
+        def load_selected_template():
+            selection = template_list.curselection()
+            if not selection:
+                messagebox.showwarning("警告", "请先选择一个模板！")
+                return
+            
+            template_name = template_list.get(selection[0])
+            template = self.template_manager.load_template(template_name)
+            if template:
+                self.apply_template(template)
+                dialog.destroy()
+                messagebox.showinfo("成功", f"模板 '{template_name}' 加载成功！")
+            else:
+                messagebox.showerror("错误", "加载模板失败！")
+        
+        Button(btn_frame, text="加载模板", command=load_selected_template, width=10).pack(side='left', padx=5)
+        
+        # 删除模板按钮
+        def delete_selected_template():
+            selection = template_list.curselection()
+            if not selection:
+                messagebox.showwarning("警告", "请先选择一个模板！")
+                return
+            
+            template_name = template_list.get(selection[0])
+            if messagebox.askyesno("确认", f"确定要删除模板 '{template_name}' 吗？"):
+                if self.template_manager.delete_template(template_name):
+                    refresh_list()
+                    messagebox.showinfo("成功", f"模板 '{template_name}' 删除成功！")
+                else:
+                    messagebox.showerror("错误", "删除模板失败！")
+        
+        Button(btn_frame, text="删除模板", command=delete_selected_template, width=10).pack(side='left', padx=5)
+        
+        # 关闭按钮
+        Button(btn_frame, text="关闭", command=dialog.destroy, width=10).pack(side='right', padx=5)
+        
+        refresh_list()
+
+    def apply_template(self, template):
+        """应用模板设置"""
+        # 设置水印类型
+        self.watermark_type.set(template.get('watermark_type', 'text'))
+        self.switch_watermark_type()
+        
+        # 应用文本水印设置
+        self.text_options.set_settings(template.get('text_settings', {}))
+        
+        # 应用图片水印设置
+        self.image_options.set_settings(template.get('image_settings', {}))
+        
+        # 更新预览
+        if self.update_callback:
+            self.update_callback()
+
+    def load_default_template(self):
+        """加载默认模板"""
+        template_names = self.template_manager.get_template_names()
+        if template_names:
+            # 尝试加载名为"默认"的模板，否则加载第一个模板
+            default_template = self.template_manager.load_template("默认")
+            if not default_template and template_names:
+                default_template = self.template_manager.load_template(template_names[0])
+            
+            if default_template:
+                self.apply_template(default_template)
+                print("默认模板加载成功")
