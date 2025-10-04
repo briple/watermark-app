@@ -1,6 +1,6 @@
 import os
 from tkinter import Frame, Button, Listbox, filedialog, Label, Scrollbar, Canvas, NW, StringVar, OptionMenu, RIGHT, Y, BOTH, END
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
 from component.watermark_options import WatermarkOptions
 from tkinterdnd2 import TkinterDnD, DND_FILES
 
@@ -9,10 +9,13 @@ SUPPORTED_FORMATS = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif')
 class ImageUploader(Frame):
     def __init__(self, master):
         super().__init__(master)
-        self.images = []  # [(filepath, thumbnail)]
+        self.images = []  # [(filepath, thumbnail, watermarked_thumb)]
         self.selected_index = None
-        self.watermark_options = None  # 将在后面初始化
-
+        self.watermark_options = None
+        self.current_watermark_pos = None
+        self.dragging_watermark = False
+        self.drag_start_pos = None
+        
         # 左侧区域：文件列表
         left_frame = Frame(self)
         left_frame.grid(row=0, column=0, rowspan=2, padx=10, pady=10, sticky='ns')
@@ -32,7 +35,7 @@ class ImageUploader(Frame):
         right_frame = Frame(self)
         right_frame.grid(row=0, column=1, rowspan=2, padx=10, pady=10, sticky='nsew')
 
-        # 拖拽上传区域 - 放在右上方
+        # 拖拽上传区域
         self.drag_label = Label(right_frame, text="拖拽图片或文件到此处上传", 
                                relief="groove", width=60, height=3,
                                font=("Arial", 10), bg="#f0f0f0")
@@ -40,18 +43,18 @@ class ImageUploader(Frame):
         self.drag_label.drop_target_register(DND_FILES)
         self.drag_label.dnd_bind('<<Drop>>', self.drop_files)
 
-        # 缩略图展示 - 放在拖拽区域正下方，尽可能大
+        # 预览区域
         preview_frame = Frame(right_frame)
         preview_frame.pack(fill='both', expand=True)
         
-        Label(preview_frame, text="图片预览", font=("Arial", 10, "bold")).pack(pady=(0, 5))
-         # 创建Canvas和滚动条容器
+        Label(preview_frame, text="图片预览 (带九宫格参考线)", font=("Arial", 10, "bold")).pack(pady=(0, 5))
+        
+        # 创建Canvas和滚动条容器
         canvas_container = Frame(preview_frame)
         canvas_container.pack(fill='both', expand=True)
         
         # 创建Canvas和垂直滚动条
-        self.canvas = Canvas(canvas_container, bg="white", relief="solid", bd=1, 
-                           scrollregion=(0, 0, 600, 800))  # 设置较大的滚动区域
+        self.canvas = Canvas(canvas_container, bg="white", relief="solid", bd=1)
         self.canvas_vscroll = Scrollbar(canvas_container, orient='vertical', command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.canvas_vscroll.set)
         
@@ -59,10 +62,33 @@ class ImageUploader(Frame):
         self.canvas.pack(side='left', fill='both', expand=True)
         self.canvas_vscroll.pack(side='right', fill='y')
         
+        # 绑定鼠标事件用于水印拖拽
+        self.canvas.bind("<ButtonPress-1>", self.on_watermark_press)
+        self.canvas.bind("<B1-Motion>", self.on_watermark_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_watermark_release)
+        
         # 绑定鼠标滚轮事件
         self.canvas.bind("<MouseWheel>", self._on_mousewheel)
         self.canvas.bind("<Button-4>", self._on_mousewheel)
         self.canvas.bind("<Button-5>", self._on_mousewheel)
+
+        # 九宫格位置选择按钮
+        self.position_frame = Frame(preview_frame)
+        self.position_frame.pack(fill='x', pady=(10, 0))
+        
+        Label(self.position_frame, text="预设位置:").pack(side='left')
+        
+        # 创建九宫格位置按钮
+        positions = [
+            ("左上", "top-left"), ("中上", "top"), ("右上", "top-right"),
+            ("左中", "left"), ("居中", "center"), ("右中", "right"),
+            ("左下", "bottom-left"), ("中下", "bottom"), ("右下", "bottom-right")
+        ]
+        
+        for text, pos in positions:
+            btn = Button(self.position_frame, text=text, width=6,
+                        command=lambda p=pos: self.set_watermark_position(p))
+            btn.pack(side='left', padx=2)
 
         # 按钮容器 Frame
         self.button_frame = Frame(self)
@@ -87,17 +113,17 @@ class ImageUploader(Frame):
         self.format_menu.grid(row=0, column=4, padx=10, pady=5)
 
         # 在下方调用水印和导出组件
-        self.watermark_options = WatermarkOptions(self, self.images, self.output_format)
+        self.watermark_options = WatermarkOptions(self, self.images, self.output_format, self.update_preview)
         self.watermark_options.grid(row=3, column=0, columnspan=2, sticky='ew', padx=10, pady=10)
 
         # 配置网格权重
-        self.grid_rowconfigure(0, weight=1)  # 第一行可扩展
-        self.grid_rowconfigure(1, weight=0)  # 第二行固定高度
-        self.grid_rowconfigure(2, weight=0)  # 按钮行固定高度
-        self.grid_rowconfigure(3, weight=0)  # 水印选项行固定高度
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=0)
+        self.grid_rowconfigure(2, weight=0)
+        self.grid_rowconfigure(3, weight=0)
         
-        self.grid_columnconfigure(0, weight=0)  # 左侧固定宽度
-        self.grid_columnconfigure(1, weight=1)  # 右侧可扩展
+        self.grid_columnconfigure(0, weight=0)
+        self.grid_columnconfigure(1, weight=1)
 
     def _on_mousewheel(self, event):
         """处理鼠标滚轮滚动事件"""
@@ -108,6 +134,7 @@ class ImageUploader(Frame):
                 self.canvas.yview_scroll(-1, "units")
             elif event.num == 5:
                 self.canvas.yview_scroll(1, "units")
+
     def upload_files(self):
         files = filedialog.askopenfilenames(filetypes=[
             ("Image files", "*.jpg *.jpeg *.png *.bmp *.tiff *.tif"),
@@ -126,50 +153,219 @@ class ImageUploader(Frame):
     def add_files(self, files):
         for f in files:
             if f.lower().endswith(SUPPORTED_FORMATS) and f not in [img[0] for img in self.images]:
-                thumb = self.make_thumbnail(f)
-                self.images.append((f, thumb))
+                thumb, watermarked_thumb = self.make_thumbnails(f)
+                self.images.append((f, thumb, watermarked_thumb))
                 self.file_list.insert(END, os.path.basename(f))
 
-    def make_thumbnail(self, filepath):
+    def make_thumbnails(self, filepath):
+        """创建原始缩略图和水印缩略图"""
         try:
-            img = Image.open(filepath)
-            # 创建适合大canvas的缩略图，但不再限制高度，保持原始比例
-            img.thumbnail((1000, 320))  # 增加最大高度限制
-            return ImageTk.PhotoImage(img)
-        except Exception:
-            return None
+            img = Image.open(filepath).convert("RGBA")
+            # 创建原始缩略图
+            original_thumb = img.copy()
+            original_thumb.thumbnail((400, 400))  # 增大预览尺寸
+            original_thumb_tk = ImageTk.PhotoImage(original_thumb)
+            
+            # 创建水印缩略图（初始状态）
+            watermarked_thumb = self.apply_watermark_to_thumbnail(img.copy())
+            watermarked_thumb_tk = ImageTk.PhotoImage(watermarked_thumb)
+            
+            return original_thumb_tk, watermarked_thumb_tk
+        except Exception as e:
+            print(f"创建缩略图时出错: {e}")
+            return None, None
+
+    def apply_watermark_to_thumbnail(self, image):
+        """应用水印到缩略图"""
+        try:
+            # 使用水印选项应用水印
+            if self.watermark_options:
+                watermarked = self.watermark_options.apply_watermark_preview(image)
+                watermarked.thumbnail((400, 400))  # 增大预览尺寸
+                return watermarked
+            image.thumbnail((400, 400))
+            return image
+        except Exception as e:
+            print(f"应用水印时出错: {e}")
+            image.thumbnail((400, 400))
+            return image
+
+    def update_preview(self):
+        """更新所有图片的预览"""
+        for i, (filepath, original_thumb, _) in enumerate(self.images):
+            try:
+                img = Image.open(filepath).convert("RGBA")
+                watermarked_thumb = self.apply_watermark_to_thumbnail(img.copy())
+                watermarked_thumb_tk = ImageTk.PhotoImage(watermarked_thumb)
+                
+                # 更新水印缩略图
+                self.images[i] = (filepath, original_thumb, watermarked_thumb_tk)
+                
+            except Exception as e:
+                print(f"更新预览时出错: {e}")
+        
+        # 刷新当前显示的预览
+        if self.selected_index is not None:
+            self.show_thumbnail(None)
 
     def show_thumbnail(self, event):
+        """显示选中的图片预览（带九宫格参考线）"""
         selection = self.file_list.curselection()
         if selection:
             idx = selection[0]
             self.selected_index = idx
-            thumb = self.images[idx][1]
-            self.canvas.delete("all")
-            if thumb:
-                # 获取canvas实际尺寸
+            
+            # 获取水印缩略图
+            _, _, watermarked_thumb = self.images[idx]
+            
+            if watermarked_thumb:
+                self.canvas.delete("all")
+                
+                # 显示完整图片
+                self.create_preview_with_grid(watermarked_thumb)
+
+    def create_preview_with_grid(self, thumb_image):
+        """创建带九宫格参考线的预览"""
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+        
+        if canvas_width <= 1:
+            canvas_width = 600
+            canvas_height = 450
+        
+        # 计算图片在canvas中的居中位置
+        img_x = (canvas_width - thumb_image.width()) // 2
+        img_y = (canvas_height - thumb_image.height()) // 2
+        
+        # 显示完整图片
+        self.canvas.create_image(img_x, img_y, anchor=NW, image=thumb_image, tags="preview_image")
+        
+        # 计算九宫格线的位置（基于图片坐标，不是canvas坐标）
+        img_width = thumb_image.width()
+        img_height = thumb_image.height()
+        
+        # 水平分割线位置（图片内的相对位置）
+        h_line1 = img_y + img_height // 3
+        h_line2 = img_y + 2 * img_height // 3
+        
+        # 垂直分割线位置（图片内的相对位置）
+        v_line1 = img_x + img_width // 3
+        v_line2 = img_x + 2 * img_width // 3
+        
+        # 绘制九宫格参考线（半透明红色）
+        self.canvas.create_line(img_x, h_line1, img_x + img_width, h_line1, 
+                              fill="red", width=1, dash=(4, 4), tags="grid_line")
+        self.canvas.create_line(img_x, h_line2, img_x + img_width, h_line2, 
+                              fill="red", width=1, dash=(4, 4), tags="grid_line")
+        self.canvas.create_line(v_line1, img_y, v_line1, img_y + img_height, 
+                              fill="red", width=1, dash=(4, 4), tags="grid_line")
+        self.canvas.create_line(v_line2, img_y, v_line2, img_y + img_height, 
+                              fill="red", width=1, dash=(4, 4), tags="grid_line")
+        
+        # 更新滚动区域
+        total_height = max(canvas_height, img_y + img_height + 20)
+        self.canvas.configure(scrollregion=(0, 0, canvas_width, total_height))
+        self.canvas.yview_moveto(0.0)
+
+    def set_watermark_position(self, position):
+        """设置水印位置"""
+        # 更新水印选项中的位置
+        if self.watermark_options:
+            if self.watermark_options.watermark_type.get() == "text":
+                self.watermark_options.text_options.position.set(position)
+            else:
+                self.watermark_options.image_options.position.set(position)
+        
+        # 更新预览
+        self.update_preview()
+
+    def on_watermark_press(self, event):
+        """鼠标按下事件 - 开始拖拽水印"""
+        # 检查是否点击在图片区域内
+        items = self.canvas.find_overlapping(event.x, event.y, event.x, event.y)
+        if items and "preview_image" in self.canvas.gettags(items[0]):
+            self.dragging_watermark = True
+            self.drag_start_pos = (event.x, event.y)
+            
+            # 计算点击位置对应的九宫格区域
+            canvas_width = self.canvas.winfo_width()
+            canvas_height = self.canvas.winfo_height()
+            
+            # 获取图片位置和尺寸
+            img_items = self.canvas.find_withtag("preview_image")
+            if img_items:
+                img_coords = self.canvas.coords(img_items[0])
+                img_x, img_y = img_coords
+                img_width = self.images[self.selected_index][2].width() if self.selected_index is not None else 0
+                img_height = self.images[self.selected_index][2].height() if self.selected_index is not None else 0
+                
+                if img_width > 0 and img_height > 0:
+                    # 计算点击位置在图片内的相对坐标
+                    rel_x = event.x - img_x
+                    rel_y = event.y - img_y
+                    
+                    # 计算对应的九宫格区域
+                    col = int(rel_x / (img_width / 3))
+                    row = int(rel_y / (img_height / 3))
+                    
+                    if 0 <= row < 3 and 0 <= col < 3:
+                        # 将点击的格子位置转换为对应的预设位置
+                        position_map = {
+                            (0, 0): "top-left", (0, 1): "top", (0, 2): "top-right",
+                            (1, 0): "left", (1, 1): "center", (1, 2): "right",
+                            (2, 0): "bottom-left", (2, 1): "bottom", (2, 2): "bottom-right"
+                        }
+                        
+                        new_position = position_map.get((row, col))
+                        if new_position:
+                            self.set_watermark_position(new_position)
+
+    def on_watermark_drag(self, event):
+        """鼠标拖拽事件 - 拖拽水印"""
+        if self.dragging_watermark:
+            # 可以添加拖拽时的视觉反馈，比如显示当前位置
+            pass
+
+    def on_watermark_release(self, event):
+        """鼠标释放事件 - 结束拖拽水印"""
+        if self.dragging_watermark:
+            self.dragging_watermark = False
+            
+            # 检查是否释放在图片区域内
+            items = self.canvas.find_overlapping(event.x, event.y, event.x, event.y)
+            if items and "preview_image" in self.canvas.gettags(items[0]):
+                # 计算释放位置对应的九宫格区域
                 canvas_width = self.canvas.winfo_width()
                 canvas_height = self.canvas.winfo_height()
                 
-                # 如果canvas还没有实际尺寸，使用默认尺寸
-                if canvas_width <= 1:
-                    canvas_width = 600
-                    canvas_height = 450
-                
-                # 计算居中位置
-                x = (canvas_width - thumb.width()) // 2
-                y = (canvas_height - thumb.height()) // 2
-                
-                self.canvas.create_image(x, y, anchor=NW, image=thumb)
-                self.canvas.image = thumb
-
-                # 更新滚动区域以适应图片高度
-                total_height = thumb.height() + 20  # 图片高度 + 边距
-                self.canvas.configure(scrollregion=(0, 0, canvas_width, total_height))
-                
-                # 重置滚动位置到顶部
-                self.canvas.yview_moveto(0.0)
-
+                # 获取图片位置和尺寸
+                img_items = self.canvas.find_withtag("preview_image")
+                if img_items:
+                    img_coords = self.canvas.coords(img_items[0])
+                    img_x, img_y = img_coords
+                    img_width = self.images[self.selected_index][2].width() if self.selected_index is not None else 0
+                    img_height = self.images[self.selected_index][2].height() if self.selected_index is not None else 0
+                    
+                    if img_width > 0 and img_height > 0:
+                        # 计算释放位置在图片内的相对坐标
+                        rel_x = event.x - img_x
+                        rel_y = event.y - img_y
+                        
+                        # 计算对应的九宫格区域
+                        col = int(rel_x / (img_width / 3))
+                        row = int(rel_y / (img_height / 3))
+                        
+                        if 0 <= row < 3 and 0 <= col < 3:
+                            # 将释放的格子位置转换为对应的预设位置
+                            position_map = {
+                                (0, 0): "top-left", (0, 1): "top", (0, 2): "top-right",
+                                (1, 0): "left", (1, 1): "center", (1, 2): "right",
+                                (2, 0): "bottom-left", (2, 1): "bottom", (2, 2): "bottom-right"
+                            }
+                            
+                            new_position = position_map.get((row, col))
+                            if new_position:
+                                self.set_watermark_position(new_position)
 
     def delete_selected(self):
         selection = self.file_list.curselection()
@@ -179,8 +375,6 @@ class ImageUploader(Frame):
             del self.images[idx]
             self.canvas.delete("all")
             self.selected_index = None
-
-             # 重置滚动区域
             self.canvas.configure(scrollregion=(0, 0, 600, 800))
 
     def drop_files(self, event):
@@ -188,7 +382,6 @@ class ImageUploader(Frame):
         all_files = []
         for f in files:
             if os.path.isdir(f):
-                # 遍历文件夹，添加所有支持格式的图片
                 for root, _, filenames in os.walk(f):
                     for fname in filenames:
                         if fname.lower().endswith(SUPPORTED_FORMATS):

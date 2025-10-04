@@ -93,8 +93,11 @@ class TextWatermarkOptions(Frame):
         position_frame.grid(row=4, column=0, columnspan=5, sticky='ew', padx=5, pady=2)
         
         Label(position_frame, text="位置:").pack(side='left', padx=(0, 10))
-        self.position = StringVar(value="bottom-right")
-        positions = ["center", "top-left", "top-right", "bottom-left", "bottom-right", "tile"]
+        # 更新位置选项以匹配九宫格
+        self.position = StringVar(value="center")
+        positions = ["top-left", "top", "top-right", 
+                    "left", "center", "right", 
+                    "bottom-left", "bottom", "bottom-right"]
         position_menu = OptionMenu(position_frame, self.position, *positions)
         position_menu.pack(side='left')
         if update_callback:
@@ -115,8 +118,42 @@ class TextWatermarkOptions(Frame):
         try:
             font_size = self.font_size.get()
             font_family = self.font_family.get()
-            return ImageFont.truetype(font_family, font_size)
-        except:
+            
+            # 构建字体路径或名称，考虑粗体和斜体
+            # 对于常见字体，我们可以尝试不同的字体变体名称
+            font_variants = {
+                (False, False): font_family,  # 常规
+                (True, False): f"{font_family} Bold",  # 粗体
+                (False, True): f"{font_family} Italic",  # 斜体
+                (True, True): f"{font_family} Bold Italic"  # 粗斜体
+            }
+            
+            variant_key = (self.bold.get() == 1, self.italic.get() == 1)
+            font_name = font_variants[variant_key]
+            
+            try:
+                # 首先尝试直接加载指定名称的字体
+                return ImageFont.truetype(font_name, font_size)
+            except:
+                # 如果失败，尝试加载基础字体并使用字体变体
+                try:
+                    base_font = ImageFont.truetype(font_family, font_size)
+                    
+                    # 使用font_variant方法应用样式
+                    if self.bold.get() and self.italic.get():
+                        return base_font.font_variant(bold=True, italic=True)
+                    elif self.bold.get():
+                        return base_font.font_variant(bold=True)
+                    elif self.italic.get():
+                        return base_font.font_variant(italic=True)
+                    else:
+                        return base_font
+                except:
+                    # 如果都失败，使用默认字体
+                    return ImageFont.load_default()
+                    
+        except Exception as e:
+            print(f"加载字体时出错: {e}")
             return ImageFont.load_default()
 
     def apply_watermark(self, image):
@@ -161,18 +198,28 @@ class TextWatermarkOptions(Frame):
         text_width, text_height = text_size
         
         position = self.position.get()
+        margin = 20  # 边距
+        
         if position == "center":
             return ((img_width - text_width) // 2, (img_height - text_height) // 2)
         elif position == "top-left":
-            return (20, 20)
+            return (margin, margin)
+        elif position == "top":
+            return ((img_width - text_width) // 2, margin)
         elif position == "top-right":
-            return (img_width - text_width - 20, 20)
+            return (img_width - text_width - margin, margin)
+        elif position == "left":
+            return (margin, (img_height - text_height) // 2)
+        elif position == "right":
+            return (img_width - text_width - margin, (img_height - text_height) // 2)
         elif position == "bottom-left":
-            return (20, img_height - text_height - 20)
+            return (margin, img_height - text_height - margin)
+        elif position == "bottom":
+            return ((img_width - text_width) // 2, img_height - text_height - margin)
         elif position == "bottom-right":
-            return (img_width - text_width - 20, img_height - text_height - 20)
-        elif position == "tile":
-            return ((img_width - text_width) // 2, (img_height - text_height) // 2)
+            return (img_width - text_width - margin, img_height - text_height - margin)
+        else:
+            return (margin, margin)  # 默认位置
     
     def add_stroke(self, draw, text, position, font, fill_color):
         """添加描边效果"""
@@ -239,8 +286,11 @@ class ImageWatermarkOptions(Frame):
         position_frame.grid(row=2, column=0, columnspan=4, sticky='ew', padx=5, pady=2)
         
         Label(position_frame, text="位置:").pack(side='left', padx=(0, 10))
-        self.position = StringVar(value="bottom-right")
-        positions = ["center", "top-left", "top-right", "bottom-left", "bottom-right", "tile"]
+        # 更新位置选项以匹配九宫格
+        self.position = StringVar(value="center")
+        positions = ["top-left", "top", "top-right", 
+                    "left", "center", "right", 
+                    "bottom-left", "bottom", "bottom-right"]
         position_menu = OptionMenu(position_frame, self.position, *positions)
         position_menu.pack(side='left')
         if update_callback:
@@ -267,10 +317,18 @@ class ImageWatermarkOptions(Frame):
             # 打开水印图片
             watermark = Image.open(self.image_path.get()).convert("RGBA")
             
-            # 缩放水印
+            # 缩放水印 - 基于图片尺寸的百分比
             scale_factor = self.scale_percent.get() / 100.0
             new_width = int(base_image.width * scale_factor)
             new_height = int(base_image.height * scale_factor)
+            
+            # 保持水印图片的宽高比
+            wm_ratio = watermark.width / watermark.height
+            if new_width / new_height > wm_ratio:
+                new_width = int(new_height * wm_ratio)
+            else:
+                new_height = int(new_width / wm_ratio)
+                
             watermark = watermark.resize((new_width, new_height), Image.Resampling.LANCZOS)
             
             # 设置透明度
@@ -307,18 +365,28 @@ class ImageWatermarkOptions(Frame):
         wm_width, wm_height = watermark_size
         
         position = self.position.get()
+        margin = 20  # 边距
+        
         if position == "center":
             return ((base_width - wm_width) // 2, (base_height - wm_height) // 2)
         elif position == "top-left":
-            return (20, 20)
+            return (margin, margin)
+        elif position == "top":
+            return ((base_width - wm_width) // 2, margin)
         elif position == "top-right":
-            return (base_width - wm_width - 20, 20)
+            return (base_width - wm_width - margin, margin)
+        elif position == "left":
+            return (margin, (base_height - wm_height) // 2)
+        elif position == "right":
+            return (base_width - wm_width - margin, (base_height - wm_height) // 2)
         elif position == "bottom-left":
-            return (20, base_height - wm_height - 20)
+            return (margin, base_height - wm_height - margin)
+        elif position == "bottom":
+            return ((base_width - wm_width) // 2, base_height - wm_height - margin)
         elif position == "bottom-right":
-            return (base_width - wm_width - 20, base_height - wm_height - 20)
-        elif position == "tile":
-            return ((base_width - wm_width) // 2, (base_height - wm_height) // 2)
+            return (base_width - wm_width - margin, base_height - wm_height - margin)
+        else:
+            return (margin, margin)  # 默认位置
 
 
 class WatermarkOptions(Frame):
