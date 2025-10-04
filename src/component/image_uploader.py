@@ -1,7 +1,7 @@
 import os
 from tkinter import Frame, Button, Listbox, filedialog, Label, Scrollbar, Canvas, NW, StringVar, OptionMenu, RIGHT, Y, BOTH, END
-from PIL import Image, ImageTk, ImageDraw
-from component.watermark_options import WatermarkOptions
+from PIL import Image, ImageTk, ImageDraw, ImageFont  # 添加 ImageFont 导入
+from component.watermark_options import WatermarkOptions, global_watermark_settings
 from tkinterdnd2 import TkinterDnD, DND_FILES
 
 SUPPORTED_FORMATS = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif')
@@ -15,7 +15,6 @@ class ImageUploader(Frame):
         self.current_watermark_pos = None
         self.dragging_watermark = False
         self.drag_start_pos = None
-        self.custom_position = None  # 保存自定义位置 (rel_x, rel_y)
         self.saved_scroll_position = (0.0, 0.0)  # 保存滚动位置
         
         # 左侧区域：文件列表
@@ -172,8 +171,8 @@ class ImageUploader(Frame):
             original_thumb.thumbnail(thumb_size, Image.Resampling.LANCZOS)
             original_thumb_tk = ImageTk.PhotoImage(original_thumb)
             
-            # 2. 水印缩略图
-            watermarked_thumb = self.apply_watermark_to_thumbnail(original_img.copy())
+            # 2. 水印缩略图 - 使用全局设置
+            watermarked_thumb = self.apply_watermark_to_thumbnail_with_path(original_img.copy(), filepath)
             watermarked_thumb.thumbnail(thumb_size, Image.Resampling.LANCZOS)
             watermarked_thumb_tk = ImageTk.PhotoImage(watermarked_thumb)
             
@@ -182,12 +181,12 @@ class ImageUploader(Frame):
             print(f"创建缩略图时出错: {e}")
             return None, None, None
 
-    def apply_watermark_to_thumbnail(self, image):
-        """应用水印到缩略图"""
+    def apply_watermark_to_thumbnail_with_path(self, image, image_path):
+        """应用水印到缩略图（带路径参数）"""
         try:
             # 使用水印选项应用水印
             if self.watermark_options:
-                watermarked = self.watermark_options.apply_watermark_preview(image)
+                watermarked = self.watermark_options.apply_watermark_preview(image, image_path)
                 # 统一缩略图尺寸
                 watermarked.thumbnail((800, 600), Image.Resampling.LANCZOS)
                 return watermarked
@@ -197,20 +196,13 @@ class ImageUploader(Frame):
             print(f"应用水印时出错: {e}")
             image.thumbnail((800, 600), Image.Resampling.LANCZOS)
             return image
-    
-    def apply_watermark_preview(self, image):
-        """应用水印用于预览 - 使用当前设置的位置"""
-        if self.watermark_type.get() == "text":
-            return self.text_options.apply_watermark(image)
-        else:
-            return self.image_options.apply_watermark(image)
 
     def update_preview(self):
         """更新所有图片的预览 - 使用自定义位置或预设位置"""
         print("更新预览...")  # 调试信息
         
         # 确定使用自定义位置还是预设位置
-        use_custom_position = self.custom_position is not None
+        use_custom_position = global_watermark_settings.custom_position is not None
         
         for i, (filepath, original_thumb_tk, _, original_img) in enumerate(self.images):
             try:
@@ -220,10 +212,11 @@ class ImageUploader(Frame):
                 # 应用水印 - 根据是否使用自定义位置选择不同的方法
                 if use_custom_position:
                     # 使用自定义位置
-                    watermarked_thumb = self.apply_watermark_with_custom_position(img.copy(), self.custom_position[0], self.custom_position[1])
+                    custom_pos = global_watermark_settings.custom_position
+                    watermarked_thumb = self.apply_watermark_with_custom_position(img.copy(), custom_pos[0], custom_pos[1])
                 else:
                     # 使用预设位置
-                    watermarked_thumb = self.apply_watermark_to_thumbnail(img.copy())
+                    watermarked_thumb = self.apply_watermark_to_thumbnail_with_path(img.copy(), filepath)
                 
                 watermarked_thumb.thumbnail((800, 600), Image.Resampling.LANCZOS)
                 watermarked_thumb_tk = ImageTk.PhotoImage(watermarked_thumb)
@@ -237,6 +230,7 @@ class ImageUploader(Frame):
         # 刷新当前显示的预览
         if self.selected_index is not None:
             self.show_thumbnail(None)
+            
     def show_thumbnail(self, event):
         """显示选中的图片预览（带九宫格参考线）"""
         selection = self.file_list.curselection()
@@ -305,15 +299,17 @@ class ImageUploader(Frame):
     def set_watermark_position(self, position):
         """设置水印位置"""
         # 重置自定义位置，使用预设位置
-        self.custom_position = None
+        global_watermark_settings.custom_position = None
         print(f"切换到预设位置: {position}")
         
         # 更新水印选项中的位置
         if self.watermark_options:
-            if self.watermark_options.watermark_type.get() == "text":
+            if global_watermark_settings.watermark_type == "text":
                 self.watermark_options.text_options.position.set(position)
+                global_watermark_settings.update_text_setting('position', position)
             else:
                 self.watermark_options.image_options.position.set(position)
+                global_watermark_settings.update_image_setting('position', position)
         
         # 更新预览
         self.update_preview()
@@ -427,8 +423,8 @@ class ImageUploader(Frame):
 
     def set_custom_watermark_position(self, rel_x, rel_y):
         """设置自定义水印位置（基于相对坐标）"""
-        # 保存自定义位置
-        self.custom_position = (rel_x, rel_y)
+        # 保存自定义位置到全局设置
+        global_watermark_settings.custom_position = (rel_x, rel_y)
         print(f"设置自定义位置: ({rel_x:.2f}, {rel_y:.2f})")
         
         # 强制更新水印位置
@@ -471,25 +467,59 @@ class ImageUploader(Frame):
         if not self.watermark_options:
             return image
         
-        if self.watermark_options.watermark_type.get() == "text":
+        if global_watermark_settings.watermark_type == "text":
             return self.apply_text_watermark_custom(image, rel_x, rel_y)
         else:
             return self.apply_image_watermark_custom(image, rel_x, rel_y)
 
     def apply_text_watermark_custom(self, image, rel_x, rel_y):
-        """应用文本水印到自定义位置"""
-        if not self.watermark_options.text_options.text_entry.get().strip():
+        """应用文本水印到自定义位置 - 使用全局设置中的字号"""
+        if not global_watermark_settings.text_settings['text'].strip():
             return image
             
         # 创建水印层
         watermark = Image.new("RGBA", image.size, (255, 255, 255, 0))
         draw = ImageDraw.Draw(watermark)
         
-        # 获取字体
-        font = self.watermark_options.text_options.get_font()
+        # 修复：直接从全局设置中获取字号，不使用固定比例
+        # 确保字号有效
+        font_size = global_watermark_settings.text_settings['font_size']
+        if font_size < 12:  # 设置最小字号限制
+            font_size = 12
+        print(f"应用文本水印 - 使用全局字号: {font_size}")  # 调试信息
+        
+        # 重新创建字体对象
+        font_family = global_watermark_settings.text_settings['font_family']
+        is_bold = global_watermark_settings.text_settings['bold'] == 1
+        is_italic = global_watermark_settings.text_settings['italic'] == 1
+        
+        if is_bold and is_italic:
+            font_name = f"{font_family} Bold Italic"
+        elif is_bold:
+            font_name = f"{font_family} Bold"
+        elif is_italic:
+            font_name = f"{font_family} Italic"
+        else:
+            font_name = font_family
+        
+        try:
+            font = ImageFont.truetype(font_name, font_size)
+        except:
+            try:
+                base_font = ImageFont.truetype(font_family, font_size)
+                if is_bold and is_italic:
+                    font = base_font.font_variant(bold=True, italic=True)
+                elif is_bold:
+                    font = base_font.font_variant(bold=True)
+                elif is_italic:
+                    font = base_font.font_variant(italic=True)
+                else:
+                    font = base_font
+            except:
+                font = ImageFont.load_default()
         
         # 获取文本
-        text = self.watermark_options.text_options.text_entry.get()
+        text = global_watermark_settings.text_settings['text']
         
         # 计算文本尺寸
         try:
@@ -497,8 +527,8 @@ class ImageUploader(Frame):
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
         except:
-            text_width = len(text) * self.watermark_options.text_options.font_size.get() // 2
-            text_height = self.watermark_options.text_options.font_size.get()
+            text_width = len(text) * font_size // 2
+            text_height = font_size
         
         # 计算自定义位置（将相对坐标转换为绝对坐标）
         img_width, img_height = image.size
@@ -506,14 +536,14 @@ class ImageUploader(Frame):
         position_y = int(rel_y * (img_height - text_height))
         
         # 设置透明度
-        opacity = int(255 * self.watermark_options.text_options.opacity.get() / 100)
-        color = self.watermark_options.text_options.color.get()
+        opacity = int(255 * global_watermark_settings.text_settings['opacity'] / 100)
+        color = global_watermark_settings.text_settings['color']
         fill_color = self.watermark_options.text_options.hex_to_rgba(color, opacity)
         
         # 应用样式效果
-        if self.watermark_options.text_options.stroke.get():
+        if global_watermark_settings.text_settings['stroke']:
             self.watermark_options.text_options.add_stroke(draw, text, (position_x, position_y), font, fill_color)
-        elif self.watermark_options.text_options.shadow.get():
+        elif global_watermark_settings.text_settings['shadow']:
             self.watermark_options.text_options.add_shadow(draw, text, (position_x, position_y), font, fill_color)
         else:
             draw.text((position_x, position_y), text, font=font, fill=fill_color)
@@ -523,29 +553,52 @@ class ImageUploader(Frame):
 
     def apply_image_watermark_custom(self, image, rel_x, rel_y):
         """应用图片水印到自定义位置"""
-        if not self.watermark_options.image_options.image_path.get():
+        if not global_watermark_settings.image_settings['image_path']:
             return image
             
         try:
             # 打开水印图片
-            watermark = Image.open(self.watermark_options.image_options.image_path.get()).convert("RGBA")
+            watermark = Image.open(global_watermark_settings.image_settings['image_path']).convert("RGBA")
             
-            # 缩放水印
-            scale_factor = self.watermark_options.image_options.scale_percent.get() / 100.0
-            new_width = int(image.width * scale_factor)
-            new_height = int(image.height * scale_factor)
+            # 缩放水印 - 使用基于图片尺寸的固定比例，确保视觉大小一致
+            base_size = min(image.width, image.height)
+            scale_factor = global_watermark_settings.image_settings['scale_percent'] / 100.0
+            
+            # 使用固定比例而不是绝对值
+            target_size = int(base_size * scale_factor * 0.15)  # 15% 的图片高度
             
             # 保持水印图片的宽高比
             wm_ratio = watermark.width / watermark.height
-            if new_width / new_height > wm_ratio:
-                new_width = int(new_height * wm_ratio)
+            if wm_ratio > 1:
+                new_width = target_size
+                new_height = int(target_size / wm_ratio)
             else:
-                new_height = int(new_width / wm_ratio)
-                
+                new_height = target_size
+                new_width = int(target_size * wm_ratio)
+            
+            # 确保水印不会太小或太大
+            min_size = base_size * 0.05  # 最小5%
+            max_size = base_size * 0.3   # 最大30%
+            
+            if new_width < min_size or new_height < min_size:
+                if new_width < new_height:
+                    new_width = int(min_size)
+                    new_height = int(min_size / wm_ratio)
+                else:
+                    new_height = int(min_size)
+                    new_width = int(min_size * wm_ratio)
+            elif new_width > max_size or new_height > max_size:
+                if new_width > new_height:
+                    new_width = int(max_size)
+                    new_height = int(max_size / wm_ratio)
+                else:
+                    new_height = int(max_size)
+                    new_width = int(max_size * wm_ratio)
+            
             watermark = watermark.resize((new_width, new_height), Image.Resampling.LANCZOS)
             
             # 设置透明度
-            opacity = self.watermark_options.image_options.opacity.get() / 100.0
+            opacity = global_watermark_settings.image_settings['opacity'] / 100.0
             watermark = self.apply_opacity_to_image(watermark, opacity)
             
             # 计算自定义位置（将相对坐标转换为绝对坐标）
