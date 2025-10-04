@@ -1,8 +1,8 @@
 import os
 from tkinter import Frame, Button, Listbox, filedialog, Label, Scrollbar, Canvas, NW, StringVar, OptionMenu, RIGHT, Y, BOTH, END
-from PIL import Image, ImageTk, ImageDraw, ImageFont  # 添加 ImageFont 导入
-from component.watermark_options import WatermarkOptions, global_watermark_settings
-from tkinterdnd2 import TkinterDnD, DND_FILES
+from PIL import Image, ImageTk, ImageDraw, ImageFont
+from .watermark_options import WatermarkOptions, global_watermark_settings
+from tkinterdnd2 import DND_FILES
 
 SUPPORTED_FORMATS = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif')
 
