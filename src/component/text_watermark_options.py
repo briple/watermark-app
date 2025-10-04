@@ -98,7 +98,7 @@ class TextWatermarkOptions(Frame):
         self.opacity.set(global_watermark_settings.text_settings['opacity'])
         self.opacity.pack(side='left', padx=(0, 5), fill='x', expand=True)
         # 添加透明度变化监听
-        self.opacity.configure(command=self.on_slider_change)
+        # self.opacity.configure(command=self.on_slider_change)
         
         # 透明度确认按钮
         self.opacity_confirm_btn = Button(color_frame, text="确认", command=self.confirm_opacity, width=6)
@@ -151,7 +151,7 @@ class TextWatermarkOptions(Frame):
         position_menu = OptionMenu(position_frame, self.position, *positions)
         position_menu.pack(side='left')
         if update_callback:
-            self.position.trace('w', self.on_setting_change)
+            self.position.trace('w', self.on_position_change)  # 修改为专门的位置变化处理
 
     def on_text_change(self, event=None):
         """文本变化处理"""
@@ -160,7 +160,7 @@ class TextWatermarkOptions(Frame):
             self.update_callback(immediate=True)  # 文本变化立即更新
 
     def on_setting_change(self, *args):
-        """设置变化处理"""
+        """设置变化处理（除了位置）"""
         try:
             # 安全地获取字号值
             font_size_value = self.get_safe_int_value(self.font_size)
@@ -174,13 +174,25 @@ class TextWatermarkOptions(Frame):
             global_watermark_settings.update_text_setting('opacity', self.opacity.get())
             if stroke_width_value is not None:
                 global_watermark_settings.update_text_setting('stroke_width', stroke_width_value)
-            global_watermark_settings.update_text_setting('position', self.position.get())
             
             if self.update_callback:
                 self.update_callback(immediate=True)  # 设置变化立即更新
                 
         except Exception as e:
             print(f"设置变化处理出错: {e}")
+
+    def on_position_change(self, *args):
+        """位置变化处理 - 使用预设位置并禁用自定义位置模式"""
+        try:
+            position = self.position.get()
+            # 使用预设位置并禁用自定义位置模式
+            global_watermark_settings.set_preset_position(position)
+            
+            if self.update_callback:
+                self.update_callback(immediate=True)  # 位置变化立即更新
+                
+        except Exception as e:
+            print(f"位置变化处理出错: {e}")
 
     def on_checkbutton_change(self):
         """复选框变化处理"""

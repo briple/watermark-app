@@ -2,6 +2,8 @@ import os
 from tkinter import Frame, Label, Button, Entry, Scale, StringVar, OptionMenu, Toplevel, Listbox, END
 from tkinter import messagebox, filedialog
 import tkinter.simpledialog
+import tkinter as tk  # 添加这行
+import tkinter.simpledialog  # 确保这行存在
 from PIL import Image, ImageDraw, ImageFont
 from .watermark_settings import global_watermark_settings
 from .template_manager import TemplateManager
@@ -161,11 +163,11 @@ class WatermarkOptions(Frame):
             self.export_folder.insert(0, folder)
 
     def apply_watermark_preview(self, image, image_path):
-        """应用水印用于预览 - 支持缓存"""
+        """应用水印用于预览 - 支持缓存，根据位置模式选择应用方式"""
         if image is None:
             return None
         
-        # 生成缓存键，包含设置版本号
+        # 生成缓存键，包含设置版本号和位置模式
         cache_key = f"{image_path}_{global_watermark_settings.watermark_type}_{global_watermark_settings._version}"
         
         # 检查缓存
@@ -173,10 +175,17 @@ class WatermarkOptions(Frame):
             return self.processed_images_cache[cache_key]
         
         try:
-            if global_watermark_settings.watermark_type == "text":
-                result = self.text_options.apply_watermark(image)
+            # 根据位置模式选择不同的水印应用方式
+            if global_watermark_settings.use_custom_position and global_watermark_settings.custom_position:
+                # 使用自定义位置
+                rel_x, rel_y = global_watermark_settings.custom_position
+                result = self.apply_watermark_with_custom_position(image, rel_x, rel_y)
             else:
-                result = self.image_options.apply_watermark(image)
+                # 使用预设位置
+                if global_watermark_settings.watermark_type == "text":
+                    result = self.text_options.apply_watermark(image)
+                else:
+                    result = self.image_options.apply_watermark(image)
             
             if result is None:
                 return image
@@ -190,11 +199,13 @@ class WatermarkOptions(Frame):
             return image
 
     def get_current_settings(self):
-        """获取当前所有设置"""
+        """获取当前所有设置，包括位置模式"""
         return {
             'watermark_type': global_watermark_settings.watermark_type,
             'text_settings': global_watermark_settings.text_settings.copy(),
-            'image_settings': global_watermark_settings.image_settings.copy()
+            'image_settings': global_watermark_settings.image_settings.copy(),
+            'use_custom_position': global_watermark_settings.use_custom_position,
+            'custom_position': global_watermark_settings.custom_position
         }
 
     def apply_watermark_with_custom_position(self, image, rel_x, rel_y):
@@ -205,7 +216,7 @@ class WatermarkOptions(Frame):
             return self.apply_image_watermark_custom(image, rel_x, rel_y)
 
     def apply_text_watermark_custom(self, image, rel_x, rel_y):
-        """应用文本水印到自定义位置 - 确保所有图片水印大小一致"""
+        """应用文本水印到自定义位置 - 使用全局设置中的字号"""
         if not global_watermark_settings.text_settings['text'].strip():
             return image
             
@@ -213,17 +224,18 @@ class WatermarkOptions(Frame):
         watermark = Image.new("RGBA", image.size, (255, 255, 255, 0))
         draw = ImageDraw.Draw(watermark)
         
-        # 获取字体 - 使用固定的字体大小（基于图片尺寸的比例）
-        base_size = min(image.width, image.height)
-        font_scale = 0.04  # 4% 的图片高度
-        font_size = max(12, int(base_size * font_scale))
+        # 修复：直接从全局设置中获取字号，不使用固定比例
+        # 确保字号有效
+        font_size = global_watermark_settings.text_settings['font_size']
+        if font_size < 12:  # 设置最小字号限制
+            font_size = 12
+        print(f"应用文本水印 - 使用全局字号: {font_size}")  # 调试信息
         
         # 重新创建字体对象
         font_family = global_watermark_settings.text_settings['font_family']
         is_bold = global_watermark_settings.text_settings['bold'] == 1
         is_italic = global_watermark_settings.text_settings['italic'] == 1
         
-        # 构建字体名称
         if is_bold and is_italic:
             font_name = f"{font_family} Bold Italic"
         elif is_bold:
@@ -234,13 +246,10 @@ class WatermarkOptions(Frame):
             font_name = font_family
         
         try:
-            # 尝试加载字体
             font = ImageFont.truetype(font_name, font_size)
         except:
             try:
-                # 如果失败，尝试基础字体
                 base_font = ImageFont.truetype(font_family, font_size)
-                # 使用font_variant应用样式
                 if is_bold and is_italic:
                     font = base_font.font_variant(bold=True, italic=True)
                 elif is_bold:
@@ -261,7 +270,6 @@ class WatermarkOptions(Frame):
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
         except:
-            # 如果计算失败，使用估计值
             text_width = len(text) * font_size // 2
             text_height = font_size
         
@@ -287,13 +295,13 @@ class WatermarkOptions(Frame):
         return Image.alpha_composite(image.convert("RGBA"), watermark)
 
     def apply_image_watermark_custom(self, image, rel_x, rel_y):
-        """应用图片水印到自定义位置 - 确保所有图片水印大小一致"""
+        """应用图片水印到自定义位置"""
         if not global_watermark_settings.image_settings['image_path']:
             return image
             
         try:
             # 打开水印图片
-            watermark_img = Image.open(global_watermark_settings.image_settings['image_path']).convert("RGBA")
+            watermark = Image.open(global_watermark_settings.image_settings['image_path']).convert("RGBA")
             
             # 缩放水印 - 使用基于图片尺寸的固定比例，确保视觉大小一致
             base_size = min(image.width, image.height)
@@ -303,7 +311,7 @@ class WatermarkOptions(Frame):
             target_size = int(base_size * scale_factor * 0.15)  # 15% 的图片高度
             
             # 保持水印图片的宽高比
-            wm_ratio = watermark_img.width / watermark_img.height
+            wm_ratio = watermark.width / watermark.height
             if wm_ratio > 1:
                 new_width = target_size
                 new_height = int(target_size / wm_ratio)
@@ -330,7 +338,7 @@ class WatermarkOptions(Frame):
                     new_height = int(max_size)
                     new_width = int(max_size * wm_ratio)
             
-            watermark = watermark_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            watermark = watermark.resize((new_width, new_height), Image.Resampling.LANCZOS)
             
             # 设置透明度
             opacity = global_watermark_settings.image_settings['opacity'] / 100.0
@@ -504,13 +512,15 @@ class WatermarkOptions(Frame):
             if not messagebox.askyesno("确认", f"模板 '{template_name}' 已存在，是否覆盖？"):
                 return
         
-        # 获取当前设置
+        # 获取当前设置，包括位置模式
         watermark_type = global_watermark_settings.watermark_type
         text_settings = global_watermark_settings.text_settings.copy()
         image_settings = global_watermark_settings.image_settings.copy()
+        use_custom_position = global_watermark_settings.use_custom_position
+        custom_position = global_watermark_settings.custom_position
         
         # 保存模板
-        if self.template_manager.save_template(template_name, watermark_type, text_settings, image_settings):
+        if self.template_manager.save_template(template_name, watermark_type, text_settings, image_settings, use_custom_position, custom_position):
             messagebox.showinfo("成功", f"模板 '{template_name}' 保存成功！")
         else:
             messagebox.showerror("错误", "保存模板失败！")
@@ -585,7 +595,7 @@ class WatermarkOptions(Frame):
         refresh_list()
 
     def apply_template(self, template):
-        """应用模板设置 - 优化版本"""
+        """应用模板设置 - 优化版本，包括位置模式"""
         # 暂时禁用更新回调
         old_callback = self.update_callback
         self.update_callback = None
@@ -601,6 +611,17 @@ class WatermarkOptions(Frame):
             
             # 应用图片水印设置
             self.image_options.set_settings(template.get('image_settings', {}))
+            
+            # 应用位置模式设置
+            use_custom_position = template.get('use_custom_position', False)
+            custom_position = template.get('custom_position', None)
+            
+            if use_custom_position and custom_position:
+                global_watermark_settings.use_custom_position = True
+                global_watermark_settings.custom_position = custom_position
+            else:
+                global_watermark_settings.use_custom_position = False
+                global_watermark_settings.custom_position = None
             
             # 清空缓存
             self.processed_images_cache.clear()

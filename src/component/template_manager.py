@@ -11,7 +11,14 @@ class TemplateManager:
         if os.path.exists(self.template_file):
             try:
                 with open(self.template_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    templates = json.load(f)
+                    # 确保向后兼容性：如果模板中没有位置模式信息，添加默认值
+                    for name, template in templates.items():
+                        if 'use_custom_position' not in template:
+                            template['use_custom_position'] = False
+                        if 'custom_position' not in template:
+                            template['custom_position'] = None
+                    return templates
             except Exception as e:
                 print(f"加载模板文件失败: {e}")
                 return {}
@@ -27,19 +34,28 @@ class TemplateManager:
             print(f"保存模板文件失败: {e}")
             return False
     
-    def save_template(self, name, watermark_type, text_settings, image_settings):
+    def save_template(self, name, watermark_type, text_settings, image_settings, use_custom_position=False, custom_position=None):
         """保存模板"""
         self.templates[name] = {
             'watermark_type': watermark_type,
             'text_settings': text_settings,
             'image_settings': image_settings,
+            'use_custom_position': use_custom_position,
+            'custom_position': custom_position,
             'timestamp': os.path.getmtime(self.template_file) if os.path.exists(self.template_file) else 0
         }
         return self.save_templates()
     
     def load_template(self, name):
         """加载模板"""
-        return self.templates.get(name)
+        template = self.templates.get(name)
+        if template:
+            # 确保向后兼容性：如果模板中没有位置模式信息，添加默认值
+            if 'use_custom_position' not in template:
+                template['use_custom_position'] = False
+            if 'custom_position' not in template:
+                template['custom_position'] = None
+        return template
     
     def delete_template(self, name):
         """删除模板"""

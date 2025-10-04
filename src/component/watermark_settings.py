@@ -26,6 +26,7 @@ class WatermarkSettings:
             'position': "center"
         }
         self.custom_position = None  # 自定义位置 (rel_x, rel_y)
+        self.use_custom_position = False  # 是否使用自定义位置
         self._version = 0  # 添加版本号用于检测设置变化
     
     def update_text_setting(self, key, value):
@@ -47,10 +48,24 @@ class WatermarkSettings:
             self._version += 1
     
     def set_custom_position(self, value):
-        """设置自定义位置"""
+        """设置自定义位置并启用自定义位置模式"""
         if self.custom_position != value:
             self.custom_position = value
+            self.use_custom_position = True
             self._version += 1
+    
+    def set_preset_position(self, position):
+        """设置预设位置并禁用自定义位置模式"""
+        if self.watermark_type == "text":
+            if self.text_settings['position'] != position:
+                self.text_settings['position'] = position
+                self.use_custom_position = False
+                self._version += 1
+        else:
+            if self.image_settings['position'] != position:
+                self.image_settings['position'] = position
+                self.use_custom_position = False
+                self._version += 1
 
 # 创建全局水印设置实例
 global_watermark_settings = WatermarkSettings()

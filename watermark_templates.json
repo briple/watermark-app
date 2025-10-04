@@ -1,39 +1,16 @@
 {
-  "你好": {
+  "hello": {
     "watermark_type": "text",
     "text_settings": {
-      "text": "hello ",
-      "font_family": "Courier New",
-      "font_size": 100,
-      "bold": 0,
-      "italic": 1,
-      "color": "#442cf3",
-      "opacity": 100,
-      "shadow": 0,
-      "stroke": 0,
-      "stroke_width": 2,
-      "position": "left"
-    },
-    "image_settings": {
-      "image_path": "",
-      "scale_percent": 30,
-      "opacity": 50,
-      "position": "center"
-    },
-    "timestamp": 1759583354.468296
-  },
-  "red": {
-    "watermark_type": "text",
-    "text_settings": {
-      "text": "Watermark",
-      "font_family": "Courier New",
+      "text": "hello",
+      "font_family": "Times New Roman",
       "font_size": 100,
       "bold": 1,
       "italic": 1,
-      "color": "#fc4831",
-      "opacity": 86,
-      "shadow": 0,
-      "stroke": 0,
+      "color": "#4126f3",
+      "opacity": 50,
+      "shadow": 1,
+      "stroke": 1,
       "stroke_width": 2,
       "position": "top"
     },
@@ -43,6 +20,95 @@
       "opacity": 50,
       "position": "center"
     },
-    "timestamp": 1759583687.3241847
+    "use_custom_position": true,
+    "custom_position": [
+      0.8676975945017182,
+      0.1
+    ],
+    "timestamp": 1759598452.15722
+  },
+  "又下": {
+    "watermark_type": "text",
+    "text_settings": {
+      "text": "hello",
+      "font_family": "Times New Roman",
+      "font_size": 100,
+      "bold": 1,
+      "italic": 1,
+      "color": "#4126f3",
+      "opacity": 50,
+      "shadow": 1,
+      "stroke": 1,
+      "stroke_width": 2,
+      "position": "bottom-right"
+    },
+    "image_settings": {
+      "image_path": "",
+      "scale_percent": 30,
+      "opacity": 50,
+      "position": "center"
+    },
+    "use_custom_position": false,
+    "custom_position": [
+      0.8676975945017182,
+      0.1
+    ],
+    "timestamp": 1759599520.0610456
+  },
+  "test": {
+    "watermark_type": "image",
+    "text_settings": {
+      "text": "hello",
+      "font_family": "Times New Roman",
+      "font_size": 100,
+      "bold": 1,
+      "italic": 1,
+      "color": "#4126f3",
+      "opacity": 50,
+      "shadow": 1,
+      "stroke": 1,
+      "stroke_width": 2,
+      "position": "center"
+    },
+    "image_settings": {
+      "image_path": "/Users/lalala/lalala/毕业论文/images/大语言模型模块总体类图.png",
+      "scale_percent": 137,
+      "opacity": 100,
+      "position": "top"
+    },
+    "use_custom_position": false,
+    "custom_position": [
+      0.40375,
+      0.12531328320802004
+    ],
+    "timestamp": 1759599759.0154605
+  },
+  "pic": {
+    "watermark_type": "image",
+    "text_settings": {
+      "text": "hello",
+      "font_family": "Times New Roman",
+      "font_size": 100,
+      "bold": 1,
+      "italic": 1,
+      "color": "#4126f3",
+      "opacity": 50,
+      "shadow": 1,
+      "stroke": 1,
+      "stroke_width": 2,
+      "position": "left"
+    },
+    "image_settings": {
+      "image_path": "/Users/lalala/lalala/毕业论文/images/多媒体交互模块总体类图.png",
+      "scale_percent": 185,
+      "opacity": 100,
+      "position": "top-right"
+    },
+    "use_custom_position": true,
+    "custom_position": [
+      0.55,
+      0.2606516290726817
+    ],
+    "timestamp": 1759600318.73267
   }
 }
