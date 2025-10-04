@@ -158,17 +158,18 @@ class ImageUploader(Frame):
                 self.file_list.insert(END, os.path.basename(f))
 
     def make_thumbnails(self, filepath):
-        """创建原始缩略图和水印缩略图"""
+        """创建原始缩略图和水印缩略图 - 保持原尺寸，在显示时控制边距"""
         try:
             original_img = Image.open(filepath).convert("RGBA")
             
-            # 创建原始缩略图
+            # 1. 增大缩略图尺寸但不添加边距
             original_thumb = original_img.copy()
-            original_thumb.thumbnail((400, 400))
+            original_thumb.thumbnail((1000, 800))  # 增大尺寸但保持宽高比
             original_thumb_tk = ImageTk.PhotoImage(original_thumb)
             
-            # 创建水印缩略图（初始状态）
+            # 2. 水印缩略图同样处理
             watermarked_thumb = self.apply_watermark_to_thumbnail(original_img.copy())
+            watermarked_thumb.thumbnail((1000, 800))  # 同样增大尺寸
             watermarked_thumb_tk = ImageTk.PhotoImage(watermarked_thumb)
             
             return original_thumb_tk, watermarked_thumb_tk, original_img
@@ -230,7 +231,7 @@ class ImageUploader(Frame):
     # 其余方法保持不变...
 
     def create_preview_with_grid(self, thumb_image):
-        """创建带九宫格参考线的预览"""
+        """创建带九宫格参考线的预览 - 修改版：添加图片上边距"""
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
         
@@ -238,9 +239,9 @@ class ImageUploader(Frame):
             canvas_width = 600
             canvas_height = 450
         
-        # 计算图片在canvas中的居中位置
+        # 计算图片在canvas中的位置 - 添加10px上边距
         img_x = (canvas_width - thumb_image.width()) // 2
-        img_y = (canvas_height - thumb_image.height()) // 2
+        img_y = 10  # 固定上边距10px，不再居中垂直
         
         # 显示完整图片
         self.canvas.create_image(img_x, img_y, anchor=NW, image=thumb_image, tags="preview_image")
@@ -259,13 +260,13 @@ class ImageUploader(Frame):
         
         # 绘制九宫格参考线（半透明红色）
         self.canvas.create_line(img_x, h_line1, img_x + img_width, h_line1, 
-                              fill="red", width=1, dash=(4, 4), tags="grid_line")
+                            fill="red", width=1, dash=(4, 4), tags="grid_line")
         self.canvas.create_line(img_x, h_line2, img_x + img_width, h_line2, 
-                              fill="red", width=1, dash=(4, 4), tags="grid_line")
+                            fill="red", width=1, dash=(4, 4), tags="grid_line")
         self.canvas.create_line(v_line1, img_y, v_line1, img_y + img_height, 
-                              fill="red", width=1, dash=(4, 4), tags="grid_line")
+                            fill="red", width=1, dash=(4, 4), tags="grid_line")
         self.canvas.create_line(v_line2, img_y, v_line2, img_y + img_height, 
-                              fill="red", width=1, dash=(4, 4), tags="grid_line")
+                            fill="red", width=1, dash=(4, 4), tags="grid_line")
         
         # 更新滚动区域
         total_height = max(canvas_height, img_y + img_height + 20)
@@ -283,6 +284,12 @@ class ImageUploader(Frame):
         
         # 更新预览
         self.update_preview()
+
+    def on_watermark_drag(self, event):
+        """鼠标拖拽事件 - 拖拽水印"""
+        if self.dragging_watermark:
+            # 可以添加拖拽时的视觉反馈，比如显示当前位置
+            pass
 
     def on_watermark_press(self, event):
         """鼠标按下事件 - 开始拖拽水印"""
@@ -325,12 +332,6 @@ class ImageUploader(Frame):
                         if new_position:
                             self.set_watermark_position(new_position)
 
-    def on_watermark_drag(self, event):
-        """鼠标拖拽事件 - 拖拽水印"""
-        if self.dragging_watermark:
-            # 可以添加拖拽时的视觉反馈，比如显示当前位置
-            pass
-
     def on_watermark_release(self, event):
         """鼠标释放事件 - 结束拖拽水印"""
         if self.dragging_watermark:
@@ -371,7 +372,6 @@ class ImageUploader(Frame):
                             new_position = position_map.get((row, col))
                             if new_position:
                                 self.set_watermark_position(new_position)
-
     def delete_selected(self):
         selection = self.file_list.curselection()
         if selection:
