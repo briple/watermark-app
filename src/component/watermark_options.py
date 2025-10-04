@@ -40,7 +40,6 @@ class TextWatermarkOptions(Frame):
             "Comic Sans MS": "Comic Sans MS",
             "Impact": "Impact",
             "Lucida Grande": "Lucida Grande",
-        
         }
         
         self.available_fonts = list(self.font_mapping.keys())
@@ -204,62 +203,93 @@ class TextWatermarkOptions(Frame):
             print(f"加载字体时出错: {e}")
             return ImageFont.load_default()
 
-    def get_base_font(self, font_name, font_size):
-        """获取基础字体（忽略粗体斜体设置）"""
-        # 移除可能的样式后缀
-        base_name = font_name
-        for suffix in [' Bold', ' Italic', ' Bold Italic']:
-            if base_name.endswith(suffix):
-                base_name = base_name[:-len(suffix)]
-                break
-        
-        try:
-            font = ImageFont.truetype(base_name, font_size)
-            print(f"成功加载基础字体: {base_name}")
-            return font
-        except:
-            return None
-
     def apply_watermark(self, image):
-        """应用文本水印到图片"""
+        """应用文本水印到图片 - 修复版本"""
+        # 检查图片是否有效
+        if image is None:
+            print("错误: 图片对象为None")
+            return None
+            
         if not self.text_entry.get().strip():
             return image
             
-        # 创建水印层
-        watermark = Image.new("RGBA", image.size, (255, 255, 255, 0))
-        draw = ImageDraw.Draw(watermark)
-        
-        # 获取字体
-        font = self.get_font()
-        
-        # 计算文本位置
-        text = self.text_entry.get()
         try:
-            bbox = draw.textbbox((0, 0), text, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-        except:
-            # 如果计算失败，使用估计值
-            text_width = len(text) * self.font_size.get() // 2
-            text_height = self.font_size.get()
-        
-        position = self.get_text_position(image.size, (text_width, text_height))
-        
-        # 设置透明度
-        opacity = int(255 * self.opacity.get() / 100)
-        color = self.color.get()
-        fill_color = self.hex_to_rgba(color, opacity)
-        
-        # 应用样式效果
-        if self.stroke.get():
-            self.add_stroke(draw, text, position, font, fill_color)
-        elif self.shadow.get():
-            self.add_shadow(draw, text, position, font, fill_color)
-        else:
-            draw.text(position, text, font=font, fill=fill_color)
-        
-        # 合并水印和原图
-        return Image.alpha_composite(image.convert("RGBA"), watermark)
+            # 创建水印层
+            watermark = Image.new("RGBA", image.size, (255, 255, 255, 0))
+            draw = ImageDraw.Draw(watermark)
+            
+            # 获取字体 - 使用基于图片尺寸的固定比例
+            base_size = min(image.width, image.height)
+            font_scale = 0.04  # 4% 的图片高度
+            font_size = max(12, int(base_size * font_scale))
+            
+            # 重新创建字体对象
+            font_family = self.font_family.get()
+            is_bold = self.bold.get() == 1
+            is_italic = self.italic.get() == 1
+            
+            if is_bold and is_italic:
+                font_name = f"{font_family} Bold Italic"
+            elif is_bold:
+                font_name = f"{font_family} Bold"
+            elif is_italic:
+                font_name = f"{font_family} Italic"
+            else:
+                font_name = font_family
+            
+            try:
+                font = ImageFont.truetype(font_name, font_size)
+            except:
+                try:
+                    base_font = ImageFont.truetype(font_family, font_size)
+                    if is_bold and is_italic:
+                        font = base_font.font_variant(bold=True, italic=True)
+                    elif is_bold:
+                        font = base_font.font_variant(bold=True)
+                    elif is_italic:
+                        font = base_font.font_variant(italic=True)
+                    else:
+                        font = base_font
+                except:
+                    font = ImageFont.load_default()
+            
+            # 获取文本
+            text = self.text_entry.get()
+            
+            # 计算文本尺寸
+            try:
+                bbox = draw.textbbox((0, 0), text, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+            except:
+                # 如果计算失败，使用估计值
+                text_width = len(text) * font_size // 2
+                text_height = font_size
+            
+            # 计算位置
+            position = self.get_text_position(image.size, (text_width, text_height))
+            
+            # 设置透明度
+            opacity = int(255 * self.opacity.get() / 100)
+            color = self.color.get()
+            fill_color = self.hex_to_rgba(color, opacity)
+            
+            # 应用样式效果
+            if self.stroke.get():
+                self.add_stroke(draw, text, position, font, fill_color)
+            elif self.shadow.get():
+                self.add_shadow(draw, text, position, font, fill_color)
+            else:
+                draw.text(position, text, font=font, fill=fill_color)
+            
+            # 合并水印和原图
+            return Image.alpha_composite(image.convert("RGBA"), watermark)
+            
+        except Exception as e:
+            print(f"应用文本水印时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            return image
     
     def get_text_position(self, image_size, text_size):
         """根据位置设置计算文本坐标"""
@@ -319,7 +349,6 @@ class TextWatermarkOptions(Frame):
         b = int(hex_color[4:6], 16)
         return (r, g, b, alpha)
 
-        
 class ImageWatermarkOptions(Frame):
     def __init__(self, master, update_callback=None):
         super().__init__(master)
@@ -379,7 +408,6 @@ class ImageWatermarkOptions(Frame):
         if self.update_callback:
             self.update_callback()
 
-    # 其他方法保持不变...
     def select_image(self):
         """选择水印图片"""
         path = filedialog.askopenfilename(
@@ -393,11 +421,21 @@ class ImageWatermarkOptions(Frame):
                 self.update_callback()
     
     def apply_watermark(self, base_image):
-        """应用图片水印到基础图片"""
+        """应用图片水印到基础图片 - 修复版本"""
+        # 检查图片是否有效
+        if base_image is None:
+            print("错误: 基础图片对象为None")
+            return None
+            
         if not self.image_path.get():
             return base_image
             
         try:
+            # 检查水印图片文件是否存在
+            if not os.path.exists(self.image_path.get()):
+                print(f"错误: 水印图片文件不存在: {self.image_path.get()}")
+                return base_image
+                
             # 打开水印图片
             watermark = Image.open(self.image_path.get()).convert("RGBA")
             
@@ -430,6 +468,8 @@ class ImageWatermarkOptions(Frame):
             
         except Exception as e:
             print(f"应用图片水印时出错: {e}")
+            import traceback
+            traceback.print_exc()
             return base_image
     
     def apply_opacity(self, image, opacity):
@@ -472,13 +512,13 @@ class ImageWatermarkOptions(Frame):
         else:
             return (margin, margin)  # 默认位置
 
-
 class WatermarkOptions(Frame):
     def __init__(self, master, images_ref, output_format_ref, update_callback=None):
         super().__init__(master)
         self.images_ref = images_ref
         self.output_format_ref = output_format_ref
         self.update_callback = update_callback
+        self.master_ref = master
 
         # 水印类型选择 - 紧凑布局
         type_frame = Frame(self)
@@ -502,19 +542,49 @@ class WatermarkOptions(Frame):
         # 默认显示文本水印
         self.image_options.grid_remove()
 
-        # 导出设置 - 紧凑布局
+        # 导出设置 - 扩展布局
         export_frame = Frame(self)
         export_frame.grid(row=2, column=0, columnspan=3, sticky='ew', padx=5, pady=5)
         
-        Label(export_frame, text="导出文件夹:").pack(side='left', padx=(0, 5))
-        self.export_folder = Entry(export_frame, width=25)
+        # 第一行：导出文件夹和命名规则
+        export_row1 = Frame(export_frame)
+        export_row1.pack(fill='x', pady=(0, 5))
+        
+        Label(export_row1, text="导出文件夹:").pack(side='left', padx=(0, 5))
+        self.export_folder = Entry(export_row1, width=20)
         self.export_folder.pack(side='left', padx=(0, 5))
-        Button(export_frame, text="选择", command=self.select_export_folder, width=6).pack(side='left', padx=(0, 10))
+        Button(export_row1, text="选择", command=self.select_export_folder, width=6).pack(side='left', padx=(0, 15))
+        
+        Label(export_row1, text="命名规则:").pack(side='left', padx=(0, 5))
+        self.naming_rule = StringVar(value="添加后缀")
+        naming_menu = OptionMenu(export_row1, self.naming_rule, "原文件名", "添加前缀", "添加后缀")
+        naming_menu.config(width=10)
+        naming_menu.pack(side='left', padx=(0, 5))
+        
+        self.custom_text = Entry(export_row1, width=12)
+        self.custom_text.pack(side='left', padx=(0, 5))
+        self.custom_text.insert(0, "_watermarked")
+        
+        # 第二行：图片质量和缩放设置
+        export_row2 = Frame(export_frame)
+        export_row2.pack(fill='x', pady=(0, 5))
+        
+        # 图片质量设置（仅对JPEG有效）
+        Label(export_row2, text="JPEG质量:").pack(side='left', padx=(0, 5))
+        self.quality = Scale(export_row2, from_=1, to=100, orient='horizontal', length=120)
+        self.quality.set(95)
+        self.quality.pack(side='left', padx=(0, 15))
+        
+        # 图片缩放设置
+        Label(export_row2, text="缩放比例(%):").pack(side='left', padx=(0, 5))
+        self.scale_percent = Scale(export_row2, from_=10, to=200, orient='horizontal', length=120)
+        self.scale_percent.set(100)
+        self.scale_percent.pack(side='left', padx=(0, 5))
         
         # 导出按钮
         self.export_btn = Button(export_frame, text="批量导出", command=self.add_watermark_and_export,
                                 bg="#4CAF50", fg="black", font=("Arial", 10, "bold"), width=10, padx=10)
-        self.export_btn.pack(side='left')
+        self.export_btn.pack(side='left', pady=(5, 0))
 
     def update_preview_callback(self):
         """包装更新回调，确保不会丢失图片选择状态"""
@@ -537,18 +607,47 @@ class WatermarkOptions(Frame):
         """选择导出文件夹"""
         folder = filedialog.askdirectory(title="选择导出文件夹")
         if folder:
+            # 检查是否选择了原文件夹
+            original_folders = set()
+            for image_data in self.images_ref:
+                if image_data and len(image_data) > 0:
+                    original_folder = os.path.dirname(image_data[0])
+                    original_folders.add(original_folder)
+            
+            if folder in original_folders:
+                self.show_message("警告", "为了安全起见，请不要导出到原文件夹！\n请选择其他文件夹。")
+                return
+            
             self.export_folder.delete(0, END)
             self.export_folder.insert(0, folder)
 
     def apply_watermark_preview(self, image):
-        """应用水印用于预览"""
-        if self.watermark_type.get() == "text":
-            return self.text_options.apply_watermark(image)
-        else:
-            return self.image_options.apply_watermark(image)
+        """应用水印用于预览 - 修复版本"""
+        # 检查图片是否有效
+        if image is None:
+            print("错误: 预览图片对象为None")
+            return None
+            
+        try:
+            if self.watermark_type.get() == "text":
+                result = self.text_options.apply_watermark(image)
+            else:
+                result = self.image_options.apply_watermark(image)
+            
+            # 检查结果是否有效
+            if result is None:
+                print("警告: 水印应用返回了None，返回原图")
+                return image
+            return result
+            
+        except Exception as e:
+            print(f"应用水印预览时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            return image
 
     def add_watermark_and_export(self):
-        """批量添加水印并导出"""
+        """批量添加水印并导出 - 修复版本"""
         images = self.images_ref
         if not images:
             self.show_message("错误", "请先上传图片")
@@ -561,39 +660,119 @@ class WatermarkOptions(Frame):
 
         output_format = self.output_format_ref.get()
         
-        success_count = 0
-        for img_path, _, _ in images:
-            try:
-                # 打开原图
-                original_img = Image.open(img_path).convert("RGBA")
-                
-                # 应用水印
-                watermarked_img = self.apply_watermark_preview(original_img)
-                
-                # 生成输出文件名
-                basename = os.path.splitext(os.path.basename(img_path))[0]
-                ext = ".png" if output_format == "PNG" else ".jpg"
-                outname = f"{basename}_watermarked{ext}"
-                outpath = os.path.join(export_dir, outname)
-                
-                # 保存图片
-                if output_format == "JPEG":
-                    watermarked_img = watermarked_img.convert("RGB")
-                watermarked_img.save(outpath, output_format)
-                success_count += 1
-                
-            except Exception as e:
-                print(f"处理图片 {img_path} 时出错: {e}")
+        # 检查是否导出到原文件夹
+        original_folders = set()
+        for image_data in images:
+            if image_data and len(image_data) > 0:
+                original_folder = os.path.dirname(image_data[0])
+                original_folders.add(original_folder)
         
-        self.show_message("完成", f"成功导出 {success_count}/{len(images)} 张图片")
+        if export_dir in original_folders:
+            self.show_message("错误", "为了安全起见，禁止导出到原文件夹！\n请选择其他文件夹。")
+            return
+
+        success_count = 0
+        total_count = len(images)
+        
+        for i, image_data in enumerate(images):
+            try:
+                # 正确获取文件路径（第一个元素）
+                img_path = image_data[0]
+                
+                print(f"正在处理第 {i+1}/{total_count} 张图片: {os.path.basename(img_path)}")
+                
+                # 检查文件是否存在
+                if not os.path.exists(img_path):
+                    print(f"错误: 图片文件不存在: {img_path}")
+                    continue
+                
+                # 每次都重新从文件加载原图
+                with Image.open(img_path) as original_img:
+                    # 转换为RGBA模式
+                    if original_img.mode != 'RGBA':
+                        original_img = original_img.convert("RGBA")
+                    
+                    # 应用水印
+                    watermarked_img = self.apply_watermark_preview(original_img)
+                    
+                    if watermarked_img is None:
+                        print(f"警告: 图片 {img_path} 水印应用失败，跳过")
+                        continue
+                    
+                    # 应用图片缩放
+                    scale_factor = self.scale_percent.get() / 100.0
+                    if scale_factor != 1.0:
+                        new_width = int(watermarked_img.width * scale_factor)
+                        new_height = int(watermarked_img.height * scale_factor)
+                        watermarked_img = watermarked_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    
+                    # 生成输出文件名
+                    basename = os.path.splitext(os.path.basename(img_path))[0]
+                    ext = ".png" if output_format == "PNG" else ".jpg"
+                    
+                    # 根据命名规则生成文件名
+                    naming_rule = self.naming_rule.get()
+                    custom_text = self.custom_text.get().strip()
+                    
+                    if naming_rule == "原文件名":
+                        outname = f"{basename}{ext}"
+                    elif naming_rule == "添加前缀" and custom_text:
+                        outname = f"{custom_text}{basename}{ext}"
+                    elif naming_rule == "添加后缀" and custom_text:
+                        outname = f"{basename}{custom_text}{ext}"
+                    else:
+                        outname = f"{basename}_watermarked{ext}"
+                    
+                    outpath = os.path.join(export_dir, outname)
+                    
+                    # 如果文件已存在，添加数字后缀
+                    counter = 1
+                    while os.path.exists(outpath):
+                        if naming_rule == "原文件名":
+                            outname = f"{basename}_{counter}{ext}"
+                        elif naming_rule == "添加前缀" and custom_text:
+                            outname = f"{custom_text}{basename}_{counter}{ext}"
+                        elif naming_rule == "添加后缀" and custom_text:
+                            outname = f"{basename}{custom_text}_{counter}{ext}"
+                        else:
+                            outname = f"{basename}_watermarked_{counter}{ext}"
+                        outpath = os.path.join(export_dir, outname)
+                        counter += 1
+                    
+                    # 保存图片
+                    save_kwargs = {}
+                    if output_format == "JPEG":
+                        watermarked_img = watermarked_img.convert("RGB")
+                        save_kwargs['quality'] = self.quality.get()
+                        save_kwargs['optimize'] = True
+                    
+                    watermarked_img.save(outpath, output_format, **save_kwargs)
+                    print(f"成功导出: {outname}")
+                    success_count += 1
+                    
+            except Exception as e:
+                print(f"处理图片 {image_data[0]} 时出错: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # 显示结果
+        if success_count == total_count:
+            self.show_message("完成", f"成功导出所有 {success_count} 张图片到:\n{export_dir}")
+        elif success_count > 0:
+            self.show_message("部分完成", 
+                            f"成功导出 {success_count}/{total_count} 张图片\n"
+                            f"失败: {total_count - success_count} 张\n"
+                            f"导出到: {export_dir}")
+        else:
+            self.show_message("失败", "所有图片导出失败，请查看控制台错误信息")
 
     def show_message(self, title, message):
         """显示消息对话框"""
         dialog = Toplevel(self)
         dialog.title(title)
-        dialog.geometry("300x100")
+        dialog.geometry("400x150")
         dialog.transient(self)
         dialog.grab_set()
         
-        Label(dialog, text=message, pady=20).pack()
+        Label(dialog, text=message, pady=20, justify='left').pack()
         Button(dialog, text="确定", command=dialog.destroy).pack()

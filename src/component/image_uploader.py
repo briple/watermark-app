@@ -15,6 +15,8 @@ class ImageUploader(Frame):
         self.current_watermark_pos = None
         self.dragging_watermark = False
         self.drag_start_pos = None
+        self.custom_position = None  # 保存自定义位置 (rel_x, rel_y)
+        self.saved_scroll_position = (0.0, 0.0)  # 保存滚动位置
         
         # 左侧区域：文件列表
         left_frame = Frame(self)
@@ -158,18 +160,21 @@ class ImageUploader(Frame):
                 self.file_list.insert(END, os.path.basename(f))
 
     def make_thumbnails(self, filepath):
-        """创建原始缩略图和水印缩略图 - 保持原尺寸，在显示时控制边距"""
+        """创建原始缩略图和水印缩略图 - 统一尺寸"""
         try:
             original_img = Image.open(filepath).convert("RGBA")
             
-            # 1. 增大缩略图尺寸但不添加边距
+            # 统一缩略图尺寸
+            thumb_size = (800, 600)
+            
+            # 1. 原始缩略图
             original_thumb = original_img.copy()
-            original_thumb.thumbnail((1000, 800))  # 增大尺寸但保持宽高比
+            original_thumb.thumbnail(thumb_size, Image.Resampling.LANCZOS)
             original_thumb_tk = ImageTk.PhotoImage(original_thumb)
             
-            # 2. 水印缩略图同样处理
+            # 2. 水印缩略图
             watermarked_thumb = self.apply_watermark_to_thumbnail(original_img.copy())
-            watermarked_thumb.thumbnail((1000, 800))  # 同样增大尺寸
+            watermarked_thumb.thumbnail(thumb_size, Image.Resampling.LANCZOS)
             watermarked_thumb_tk = ImageTk.PhotoImage(watermarked_thumb)
             
             return original_thumb_tk, watermarked_thumb_tk, original_img
@@ -183,23 +188,44 @@ class ImageUploader(Frame):
             # 使用水印选项应用水印
             if self.watermark_options:
                 watermarked = self.watermark_options.apply_watermark_preview(image)
-                watermarked.thumbnail((400, 400))
+                # 统一缩略图尺寸
+                watermarked.thumbnail((800, 600), Image.Resampling.LANCZOS)
                 return watermarked
-            image.thumbnail((400, 400))
+            image.thumbnail((800, 600), Image.Resampling.LANCZOS)
             return image
         except Exception as e:
             print(f"应用水印时出错: {e}")
-            image.thumbnail((400, 400))
+            image.thumbnail((800, 600), Image.Resampling.LANCZOS)
             return image
+    
+    def apply_watermark_preview(self, image):
+        """应用水印用于预览 - 使用当前设置的位置"""
+        if self.watermark_type.get() == "text":
+            return self.text_options.apply_watermark(image)
+        else:
+            return self.image_options.apply_watermark(image)
 
     def update_preview(self):
-        """更新所有图片的预览 - 修复版本"""
+        """更新所有图片的预览 - 使用自定义位置或预设位置"""
         print("更新预览...")  # 调试信息
+        
+        # 确定使用自定义位置还是预设位置
+        use_custom_position = self.custom_position is not None
+        
         for i, (filepath, original_thumb_tk, _, original_img) in enumerate(self.images):
             try:
                 # 重新从文件加载图片，避免引用丢失
                 img = Image.open(filepath).convert("RGBA")
-                watermarked_thumb = self.apply_watermark_to_thumbnail(img.copy())
+                
+                # 应用水印 - 根据是否使用自定义位置选择不同的方法
+                if use_custom_position:
+                    # 使用自定义位置
+                    watermarked_thumb = self.apply_watermark_with_custom_position(img.copy(), self.custom_position[0], self.custom_position[1])
+                else:
+                    # 使用预设位置
+                    watermarked_thumb = self.apply_watermark_to_thumbnail(img.copy())
+                
+                watermarked_thumb.thumbnail((800, 600), Image.Resampling.LANCZOS)
                 watermarked_thumb_tk = ImageTk.PhotoImage(watermarked_thumb)
                 
                 # 更新水印缩略图，保持原始缩略图和原图引用
@@ -211,13 +237,15 @@ class ImageUploader(Frame):
         # 刷新当前显示的预览
         if self.selected_index is not None:
             self.show_thumbnail(None)
-
     def show_thumbnail(self, event):
         """显示选中的图片预览（带九宫格参考线）"""
         selection = self.file_list.curselection()
         if selection:
             idx = selection[0]
             self.selected_index = idx
+            
+            # 保存当前滚动位置
+            current_scroll = self.canvas.yview()
             
             # 获取水印缩略图
             filepath, _, watermarked_thumb_tk, _ = self.images[idx]
@@ -227,8 +255,9 @@ class ImageUploader(Frame):
                 
                 # 显示完整图片
                 self.create_preview_with_grid(watermarked_thumb_tk)
-
-    # 其余方法保持不变...
+                
+                # 恢复滚动位置
+                self.canvas.yview_moveto(current_scroll[0])
 
     def create_preview_with_grid(self, thumb_image):
         """创建带九宫格参考线的预览 - 修改版：添加图片上边距"""
@@ -275,6 +304,10 @@ class ImageUploader(Frame):
 
     def set_watermark_position(self, position):
         """设置水印位置"""
+        # 重置自定义位置，使用预设位置
+        self.custom_position = None
+        print(f"切换到预设位置: {position}")
+        
         # 更新水印选项中的位置
         if self.watermark_options:
             if self.watermark_options.watermark_type.get() == "text":
@@ -285,12 +318,6 @@ class ImageUploader(Frame):
         # 更新预览
         self.update_preview()
 
-    def on_watermark_drag(self, event):
-        """鼠标拖拽事件 - 拖拽水印"""
-        if self.dragging_watermark:
-            # 可以添加拖拽时的视觉反馈，比如显示当前位置
-            pass
-
     def on_watermark_press(self, event):
         """鼠标按下事件 - 开始拖拽水印"""
         # 检查是否点击在图片区域内
@@ -299,38 +326,67 @@ class ImageUploader(Frame):
             self.dragging_watermark = True
             self.drag_start_pos = (event.x, event.y)
             
-            # 计算点击位置对应的九宫格区域
-            canvas_width = self.canvas.winfo_width()
-            canvas_height = self.canvas.winfo_height()
+            # 保存当前的滚动位置
+            self.saved_scroll_position = self.canvas.yview()
             
             # 获取图片位置和尺寸
             img_items = self.canvas.find_withtag("preview_image")
             if img_items:
+                # 使用 canvasx/canvasy 获取相对于画布的真实坐标（考虑滚动）
+                canvas_x = self.canvas.canvasx(event.x)
+                canvas_y = self.canvas.canvasy(event.y)
+                
                 img_coords = self.canvas.coords(img_items[0])
                 img_x, img_y = img_coords
                 img_width = self.images[self.selected_index][2].width() if self.selected_index is not None else 0
                 img_height = self.images[self.selected_index][2].height() if self.selected_index is not None else 0
                 
                 if img_width > 0 and img_height > 0:
-                    # 计算点击位置在图片内的相对坐标
-                    rel_x = event.x - img_x
-                    rel_y = event.y - img_y
+                    # 计算点击位置在图片内的相对坐标（0-1范围）
+                    rel_x = (canvas_x - img_x) / img_width
+                    rel_y = (canvas_y - img_y) / img_height
                     
-                    # 计算对应的九宫格区域
-                    col = int(rel_x / (img_width / 3))
-                    row = int(rel_y / (img_height / 3))
+                    # 限制在图片范围内
+                    rel_x = max(0, min(1, rel_x))
+                    rel_y = max(0, min(1, rel_y))
                     
-                    if 0 <= row < 3 and 0 <= col < 3:
-                        # 将点击的格子位置转换为对应的预设位置
-                        position_map = {
-                            (0, 0): "top-left", (0, 1): "top", (0, 2): "top-right",
-                            (1, 0): "left", (1, 1): "center", (1, 2): "right",
-                            (2, 0): "bottom-left", (2, 1): "bottom", (2, 2): "bottom-right"
-                        }
+                    print(f"点击位置: 相对坐标({rel_x:.2f}, {rel_y:.2f}), 画布坐标({canvas_x}, {canvas_y})")
+                    
+                    # 立即更新水印位置到点击位置
+                    self.set_custom_watermark_position(rel_x, rel_y)
+
+    def on_watermark_drag(self, event):
+        """鼠标拖拽事件 - 实时更新水印位置"""
+        if self.dragging_watermark:
+            # 检查是否在图片区域内
+            items = self.canvas.find_overlapping(event.x, event.y, event.x, event.y)
+            if items and "preview_image" in self.canvas.gettags(items[0]):
+                # 获取图片位置和尺寸
+                img_items = self.canvas.find_withtag("preview_image")
+                if img_items:
+                    # 使用 canvasx/canvasy 获取相对于画布的真实坐标（考虑滚动）
+                    canvas_x = self.canvas.canvasx(event.x)
+                    canvas_y = self.canvas.canvasy(event.y)
+                    
+                    img_coords = self.canvas.coords(img_items[0])
+                    img_x, img_y = img_coords
+                    img_width = self.images[self.selected_index][2].width() if self.selected_index is not None else 0
+                    img_height = self.images[self.selected_index][2].height() if self.selected_index is not None else 0
+                    
+                    if img_width > 0 and img_height > 0:
+                        # 计算鼠标位置在图片内的相对坐标（0-1范围）
+                        rel_x = (canvas_x - img_x) / img_width
+                        rel_y = (canvas_y - img_y) / img_height
                         
-                        new_position = position_map.get((row, col))
-                        if new_position:
-                            self.set_watermark_position(new_position)
+                        # 限制在图片范围内
+                        rel_x = max(0, min(1, rel_x))
+                        rel_y = max(0, min(1, rel_y))
+                        
+                        # 实时更新水印位置
+                        self.set_custom_watermark_position(rel_x, rel_y)
+                        
+                        # 恢复滚动位置
+                        self.canvas.yview_moveto(self.saved_scroll_position[0])
 
     def on_watermark_release(self, event):
         """鼠标释放事件 - 结束拖拽水印"""
@@ -340,38 +396,184 @@ class ImageUploader(Frame):
             # 检查是否释放在图片区域内
             items = self.canvas.find_overlapping(event.x, event.y, event.x, event.y)
             if items and "preview_image" in self.canvas.gettags(items[0]):
-                # 计算释放位置对应的九宫格区域
-                canvas_width = self.canvas.winfo_width()
-                canvas_height = self.canvas.winfo_height()
-                
                 # 获取图片位置和尺寸
                 img_items = self.canvas.find_withtag("preview_image")
                 if img_items:
+                    # 使用 canvasx/canvasy 获取相对于画布的真实坐标（考虑滚动）
+                    canvas_x = self.canvas.canvasx(event.x)
+                    canvas_y = self.canvas.canvasy(event.y)
+                    
                     img_coords = self.canvas.coords(img_items[0])
                     img_x, img_y = img_coords
                     img_width = self.images[self.selected_index][2].width() if self.selected_index is not None else 0
                     img_height = self.images[self.selected_index][2].height() if self.selected_index is not None else 0
                     
                     if img_width > 0 and img_height > 0:
-                        # 计算释放位置在图片内的相对坐标
-                        rel_x = event.x - img_x
-                        rel_y = event.y - img_y
+                        # 计算释放位置在图片内的相对坐标（0-1范围）
+                        rel_x = (canvas_x - img_x) / img_width
+                        rel_y = (canvas_y - img_y) / img_height
                         
-                        # 计算对应的九宫格区域
-                        col = int(rel_x / (img_width / 3))
-                        row = int(rel_y / (img_height / 3))
+                        # 限制在图片范围内
+                        rel_x = max(0, min(1, rel_x))
+                        rel_y = max(0, min(1, rel_y))
                         
-                        if 0 <= row < 3 and 0 <= col < 3:
-                            # 将释放的格子位置转换为对应的预设位置
-                            position_map = {
-                                (0, 0): "top-left", (0, 1): "top", (0, 2): "top-right",
-                                (1, 0): "left", (1, 1): "center", (1, 2): "right",
-                                (2, 0): "bottom-left", (2, 1): "bottom", (2, 2): "bottom-right"
-                            }
-                            
-                            new_position = position_map.get((row, col))
-                            if new_position:
-                                self.set_watermark_position(new_position)
+                        print(f"释放位置: 相对坐标({rel_x:.2f}, {rel_y:.2f}), 画布坐标({canvas_x}, {canvas_y})")
+                        
+                        # 最终更新水印位置
+                        self.set_custom_watermark_position(rel_x, rel_y)
+            
+            # 恢复滚动位置
+            self.canvas.yview_moveto(self.saved_scroll_position[0])
+
+    def set_custom_watermark_position(self, rel_x, rel_y):
+        """设置自定义水印位置（基于相对坐标）"""
+        # 保存自定义位置
+        self.custom_position = (rel_x, rel_y)
+        print(f"设置自定义位置: ({rel_x:.2f}, {rel_y:.2f})")
+        
+        # 强制更新水印位置
+        self.force_update_watermark_position(rel_x, rel_y)
+    
+    def force_update_watermark_position(self, rel_x, rel_y):
+        """强制更新水印位置到指定相对坐标"""
+        if self.selected_index is not None and self.watermark_options:
+            try:
+                # 保存当前滚动位置
+                current_scroll = self.canvas.yview()
+                
+                # 获取原图
+                filepath, _, _, original_img = self.images[self.selected_index]
+                img = Image.open(filepath).convert("RGBA")
+                
+                # 应用水印到原图（使用自定义位置）
+                watermarked_img = self.apply_watermark_with_custom_position(img.copy(), rel_x, rel_y)
+                
+                # 创建缩略图
+                watermarked_thumb = watermarked_img.copy()
+                watermarked_thumb.thumbnail((800, 600), Image.Resampling.LANCZOS)
+                watermarked_thumb_tk = ImageTk.PhotoImage(watermarked_thumb)
+                
+                # 更新图片数据
+                original_thumb_tk = self.images[self.selected_index][1]
+                self.images[self.selected_index] = (filepath, original_thumb_tk, watermarked_thumb_tk, original_img)
+                
+                # 刷新显示
+                self.show_thumbnail(None)
+                
+                # 恢复滚动位置
+                self.canvas.yview_moveto(current_scroll[0])
+                
+            except Exception as e:
+                print(f"更新自定义位置水印时出错: {e}")
+
+    def apply_watermark_with_custom_position(self, image, rel_x, rel_y):
+        """使用自定义位置应用水印"""
+        if not self.watermark_options:
+            return image
+        
+        if self.watermark_options.watermark_type.get() == "text":
+            return self.apply_text_watermark_custom(image, rel_x, rel_y)
+        else:
+            return self.apply_image_watermark_custom(image, rel_x, rel_y)
+
+    def apply_text_watermark_custom(self, image, rel_x, rel_y):
+        """应用文本水印到自定义位置"""
+        if not self.watermark_options.text_options.text_entry.get().strip():
+            return image
+            
+        # 创建水印层
+        watermark = Image.new("RGBA", image.size, (255, 255, 255, 0))
+        draw = ImageDraw.Draw(watermark)
+        
+        # 获取字体
+        font = self.watermark_options.text_options.get_font()
+        
+        # 获取文本
+        text = self.watermark_options.text_options.text_entry.get()
+        
+        # 计算文本尺寸
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+        except:
+            text_width = len(text) * self.watermark_options.text_options.font_size.get() // 2
+            text_height = self.watermark_options.text_options.font_size.get()
+        
+        # 计算自定义位置（将相对坐标转换为绝对坐标）
+        img_width, img_height = image.size
+        position_x = int(rel_x * (img_width - text_width))
+        position_y = int(rel_y * (img_height - text_height))
+        
+        # 设置透明度
+        opacity = int(255 * self.watermark_options.text_options.opacity.get() / 100)
+        color = self.watermark_options.text_options.color.get()
+        fill_color = self.watermark_options.text_options.hex_to_rgba(color, opacity)
+        
+        # 应用样式效果
+        if self.watermark_options.text_options.stroke.get():
+            self.watermark_options.text_options.add_stroke(draw, text, (position_x, position_y), font, fill_color)
+        elif self.watermark_options.text_options.shadow.get():
+            self.watermark_options.text_options.add_shadow(draw, text, (position_x, position_y), font, fill_color)
+        else:
+            draw.text((position_x, position_y), text, font=font, fill=fill_color)
+        
+        # 合并水印和原图
+        return Image.alpha_composite(image.convert("RGBA"), watermark)
+
+    def apply_image_watermark_custom(self, image, rel_x, rel_y):
+        """应用图片水印到自定义位置"""
+        if not self.watermark_options.image_options.image_path.get():
+            return image
+            
+        try:
+            # 打开水印图片
+            watermark = Image.open(self.watermark_options.image_options.image_path.get()).convert("RGBA")
+            
+            # 缩放水印
+            scale_factor = self.watermark_options.image_options.scale_percent.get() / 100.0
+            new_width = int(image.width * scale_factor)
+            new_height = int(image.height * scale_factor)
+            
+            # 保持水印图片的宽高比
+            wm_ratio = watermark.width / watermark.height
+            if new_width / new_height > wm_ratio:
+                new_width = int(new_height * wm_ratio)
+            else:
+                new_height = int(new_width / wm_ratio)
+                
+            watermark = watermark.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # 设置透明度
+            opacity = self.watermark_options.image_options.opacity.get() / 100.0
+            watermark = self.apply_opacity_to_image(watermark, opacity)
+            
+            # 计算自定义位置（将相对坐标转换为绝对坐标）
+            img_width, img_height = image.size
+            position_x = int(rel_x * (img_width - new_width))
+            position_y = int(rel_y * (img_height - new_height))
+            
+            # 创建结果图片
+            result = image.convert("RGBA")
+            result.paste(watermark, (position_x, position_y), watermark)
+            
+            return result
+            
+        except Exception as e:
+            print(f"应用自定义位置图片水印时出错: {e}")
+            return image
+
+    def apply_opacity_to_image(self, image, opacity):
+        """调整图片透明度"""
+        if opacity >= 1.0:
+            return image
+            
+        # 创建一个新的alpha通道
+        alpha = image.split()[3]
+        alpha = alpha.point(lambda p: p * opacity)
+        image.putalpha(alpha)
+        return image
+
     def delete_selected(self):
         selection = self.file_list.curselection()
         if selection:
