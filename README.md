@@ -44,6 +44,9 @@ python src/main.py
 
 This will open the application window where you can interact with the features.
 
+
+## Building the Application
+
 To build the application, execute the following command:
 
 ```
@@ -52,10 +55,12 @@ python build_mac_app.py
 
 This will build a runable application under ./dist/WatermarkApp.
 
+
+
 To run it, execute the following command:
 
 ```
-./dist.WatermarkApp
+./dist/WatermarkApp
 
 ```
 
